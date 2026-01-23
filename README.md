@@ -1,48 +1,37 @@
 # otel-langfuse
 
-> 🧪 **실험 프로젝트**: Langfuse 직접 전송 → OpenTelemetry Collector 전환 테스트
-
-LangGraph 기반 Teacher-Student 퀴즈 시스템을 사용하여 LLM observability 데이터를 Langfuse로 전송하는 방식을 실험합니다.
-
-## 🎯 목표
-
-| 단계 | 방식 | 상태 |
-|------|------|------|
-| Phase 1 | Langfuse SDK 직접 전송 | ✅ 완료 |
-| Phase 2 | OpenTelemetry Collector 경유 | 🚧 진행 중 |
+LangGraph 기반 Teacher-Student 퀴즈 시스템에서 **OpenTelemetry Collector**를 통해 LLM observability 데이터를 Langfuse로 전송합니다.
 
 ## 🏗️ 아키텍처
 
-### 현재 (Phase 1) - 직접 전송
-```
-┌─────────────┐     ┌──────────────┐
-│  LangGraph  │────▶│   Langfuse   │
-│  (FastAPI)  │     │   (K8s)      │
-└─────────────┘     └──────────────┘
-```
-
-### 목표 (Phase 2) - OTel Collector 경유
 ```
 ┌─────────────┐     ┌──────────────┐     ┌──────────────┐
 │  LangGraph  │────▶│ OTel         │────▶│   Langfuse   │
 │  (FastAPI)  │     │ Collector    │     │   (K8s)      │
+│ + Traceloop │     │   (K8s)      │     │              │
 └─────────────┘     └──────────────┘     └──────────────┘
+      OTLP/gRPC          OTLP/HTTP
 ```
+
+- **Traceloop SDK**: LangChain/OpenAI 호출을 자동 계측하여 LLM input/output 캡처
+- **OTel Collector**: 트레이스를 수집하여 Langfuse로 전달
+- **Langfuse**: LLM observability 대시보드
 
 ## 📁 프로젝트 구조
 
 ```
 otel-langfuse/
-├── main.py              # FastAPI 서버 엔트리포인트
+├── main.py              # FastAPI 서버 + OpenTelemetry 초기화
 ├── graph.py             # LangGraph 워크플로우 (Teacher-Student 퀴즈)
 ├── config.py            # 환경설정 로드
-├── requirements.txt     # Python 의존성
+├── pyproject.toml       # Python 의존성 (uv)
 ├── templates/
 │   └── index.html       # 웹 UI
 ├── static/
 │   └── style.css        # 스타일시트
 └── k8s/
-    └── langfuse-values.yaml.example  # Helm values 템플릿
+    ├── langfuse-values.yaml          # Langfuse Helm values
+    └── otel-collector-values.yaml    # OTel Collector Helm values
 ```
 
 ## 🚀 시작하기
@@ -50,33 +39,20 @@ otel-langfuse/
 ### 1. 환경 설정
 
 ```bash
-# 환경변수 파일 생성
 cp .env.example .env
-
-# 값 입력
 vim .env
 ```
 
 ### 2. 의존성 설치
 
 ```bash
-# uv 사용 시
-uv venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-
-# pip 사용 시
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+uv sync
 ```
 
 ### 3. 서버 실행
 
 ```bash
 uv run main.py
-# 또는
-python main.py
 ```
 
 브라우저에서 http://localhost:8000 접속
@@ -96,16 +72,26 @@ LangGraph Multi-Agent 시스템으로 구현된 퀴즈 애플리케이션:
 → Teacher가 정답 여부 평가
 ```
 
-## ☸️ Langfuse 배포 (Kubernetes)
+## ☸️ Kubernetes 배포
+
+### Langfuse 설치
 
 ```bash
-# Helm values 파일 생성
-cp k8s/langfuse-values.yaml.example k8s/langfuse-values.yaml
-vim k8s/langfuse-values.yaml
-
-# Helm 설치
 helm repo add langfuse https://langfuse.github.io/langfuse-k8s
-helm install langfuse langfuse/langfuse -f k8s/langfuse-values.yaml -n langfuse
+helm install langfuse langfuse/langfuse -f k8s/langfuse-values.yaml -n langfuse --create-namespace
+```
+
+### OpenTelemetry Collector 설치
+
+```bash
+# Helm repo 추가
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo update
+
+# OTel Collector 설치
+helm install otel-collector open-telemetry/opentelemetry-collector \
+    --namespace otel-system --create-namespace \
+    --values k8s/otel-collector-values.yaml
 ```
 
 ## 🔧 환경 변수
@@ -116,22 +102,31 @@ helm install langfuse langfuse/langfuse -f k8s/langfuse-values.yaml -n langfuse
 | `AZURE_OPENAI_API_KEY` | Azure OpenAI API 키 | ✅ |
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | 배포 이름 | ❌ (기본: gpt-4o) |
 | `AZURE_OPENAI_API_VERSION` | API 버전 | ❌ |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTel Collector gRPC 주소 | ❌ (기본: localhost:4317) |
 
-## 📊 Observability
+## 📊 Observability 스택
 
-### Langfuse 연동
-현재 `langfuse.langchain.CallbackHandler`를 사용하여 트레이싱:
+### Traceloop SDK
+LangChain, OpenAI 등 LLM 라이브러리를 자동 계측:
 
 ```python
-from langfuse.langchain import CallbackHandler
-langfuse_handler = CallbackHandler()
+from traceloop.sdk import Traceloop
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+Traceloop.init(
+    app_name="teacher-student-quiz",
+    exporter=OTLPSpanExporter(endpoint="http://otel-collector:4317"),
+)
 ```
 
-### TODO: OTel Collector 전환
-- [ ] OpenTelemetry SDK 설정
-- [ ] OTel Collector 배포 (K8s)
-- [ ] Langfuse OTLP 엔드포인트 연결
-- [ ] 트레이스/메트릭 비교 분석
+### OTel Collector 설정 (k8s/otel-collector-values.yaml)
+```yaml
+exporters:
+  otlphttp/langfuse:
+    endpoint: "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel"
+    headers:
+      Authorization: "Basic <base64-encoded-credentials>"
+```
 
 ## 📝 License
 
