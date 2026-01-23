@@ -1,4 +1,4 @@
-"""LangGraph Multi-Agent: Teacher-Student Quiz System with Langfuse Tracing"""
+"""LangGraph Multi-Agent: Teacher-Student Quiz System with OpenTelemetry Tracing"""
 from typing import Annotated, TypedDict, Optional, Callable
 from enum import Enum
 
@@ -7,7 +7,6 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, System
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
-from langfuse.langchain import CallbackHandler
 
 from config import (
     AZURE_OPENAI_ENDPOINT,
@@ -36,9 +35,6 @@ class State(TypedDict):
     round_count: int
     user_input: Optional[str]       # 사용자 입력 저장
 
-
-# Langfuse callback handler
-langfuse_handler = CallbackHandler()
 
 # 메모리 체크포인터
 memory = MemorySaver()

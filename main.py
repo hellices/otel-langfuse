@@ -1,4 +1,4 @@
-"""FastAPI Chat Agent with LangGraph - Teacher-Student Quiz System"""
+"""FastAPI Chat Agent with LangGraph - Teacher-Student Quiz System with OpenTelemetry"""
 import asyncio
 import json
 from contextlib import asynccontextmanager
@@ -12,13 +12,16 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+# OpenTelemetry + Traceloop for LLM tracing
+from traceloop.sdk import Traceloop
+from opentelemetry import trace
+
 from langchain_core.messages import HumanMessage
 
-from config import AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME
+from config import AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_DEPLOYMENT_NAME, OTEL_EXPORTER_OTLP_ENDPOINT
 from graph import (
     create_graph, 
     QuizPhase,
-    langfuse_handler,
 )
 
 # Global
@@ -27,10 +30,49 @@ graph = None
 session_states = {}
 
 
+# OpenTelemetry tracer
+tracer = None
+
+def setup_opentelemetry():
+    """OpenTelemetry + Traceloop 초기화 (LLM input/output 캡처)"""
+    global tracer
+    
+    import os
+    # Attribute 길이 제한 늘리기 (기본값이 작아서 LLM 메시지가 잘림)
+    os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", "65535")
+    # Traceloop content 캡처 활성화
+    os.environ.setdefault("TRACELOOP_TRACE_CONTENT", "true")
+    
+    # Traceloop 초기화 - LangChain, OpenAI 등 자동 계측
+    # exporter를 직접 생성하여 OTel Collector로 전송
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    
+    otlp_exporter = OTLPSpanExporter(
+        endpoint=OTEL_EXPORTER_OTLP_ENDPOINT,
+        insecure=True,
+    )
+    
+    Traceloop.init(
+        app_name="teacher-student-quiz",
+        disable_batch=False,
+        exporter=otlp_exporter,
+    )
+    
+    tracer = trace.get_tracer(__name__)
+    
+    print(f"✅ OpenTelemetry + Traceloop initialized!")
+    print(f"   OTLP Endpoint: {OTEL_EXPORTER_OTLP_ENDPOINT}")
+    
+    return tracer
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global graph
+    global graph, tracer
     try:
+        # OpenTelemetry 초기화
+        tracer = setup_opentelemetry()
+        
         graph = create_graph()
         print("✅ LangGraph Teacher-Student Quiz Agent initialized!")
         print(f"   Endpoint: {AZURE_OPENAI_ENDPOINT}")
@@ -204,68 +246,76 @@ async def chat_stream(request: ChatRequest):
                 phase = QuizPhase.QUESTIONING
                 current_state["phase"] = phase
             
-            # LangGraph 설정 - Langfuse 콜백 포함
+            # LangGraph 설정
             config = {
                 "configurable": {"thread_id": session_id},
-                "callbacks": [langfuse_handler],
             }
             
-            # 그래프 invoke 준비
-            invoke_state = {
-                "messages": [HumanMessage(content=user_input)],
-                "user_input": user_input,
-                "phase": phase,
-                "difficulty": current_state.get("difficulty"),
-                "subject": current_state.get("subject"),
-                "round_count": current_state.get("round_count", 0),
-            }
+            # OpenTelemetry span으로 트레이싱
+            with tracer.start_as_current_span("chat_stream") as span:
+                span.set_attribute("session_id", session_id)
+                span.set_attribute("user_input", user_input)
+                span.set_attribute("phase", phase)
             
-            # astream으로 LangGraph 실행 (stream_mode="updates"로 노드별 결과 스트리밍)
-            current_node = None
-            node_labels = {
-                "teacher_question": "👨‍🏫 Teacher (문제)",
-                "student_answer": "🧑‍🎓 Student",
-                "teacher_evaluate": "👨‍🏫 Teacher (평가)",
-            }
-            
-            # stream_mode="updates"로 노드별 결과 스트리밍 + Langfuse 트레이스 유지
-            async for event in graph.astream(invoke_state, config=config, stream_mode="updates"):
-                for node_name, node_output in event.items():
-                    print(f"[DEBUG] node={node_name}, output_keys={node_output.keys() if isinstance(node_output, dict) else 'not dict'}")
-                    
-                    # 메시지 추출
-                    if isinstance(node_output, dict) and "messages" in node_output:
-                        for msg in node_output["messages"]:
-                            if hasattr(msg, "content") and msg.content:
-                                content = msg.content
+                # 그래프 invoke 준비
+                invoke_state = {
+                    "messages": [HumanMessage(content=user_input)],
+                    "user_input": user_input,
+                    "phase": phase,
+                    "difficulty": current_state.get("difficulty"),
+                    "subject": current_state.get("subject"),
+                    "round_count": current_state.get("round_count", 0),
+                }
+                
+                # astream으로 LangGraph 실행 (stream_mode="updates"로 노드별 결과 스트리밍)
+                current_node = None
+                node_labels = {
+                    "teacher_question": "👨‍🏫 Teacher (문제)",
+                    "student_answer": "🧑‍🎓 Student",
+                    "teacher_evaluate": "👨‍🏫 Teacher (평가)",
+                }
+                
+                # stream_mode="updates"로 노드별 결과 스트리밍
+                async for event in graph.astream(invoke_state, config=config, stream_mode="updates"):
+                    for node_name, node_output in event.items():
+                        with tracer.start_as_current_span(f"node_{node_name}") as node_span:
+                            node_span.set_attribute("node_name", node_name)
+                            print(f"[DEBUG] node={node_name}, output_keys={node_output.keys() if isinstance(node_output, dict) else 'not dict'}")
+                            
+                            # 메시지 추출
+                            if isinstance(node_output, dict) and "messages" in node_output:
+                                for msg in node_output["messages"]:
+                                    if hasattr(msg, "content") and msg.content:
+                                        content = msg.content
+                                        node_span.set_attribute("content_length", len(content))
+                                        
+                                        # 노드별 라벨 설정
+                                        label = node_labels.get(node_name, node_name)
+                                        if node_name == "teacher_question":
+                                            rc = current_state.get("round_count", 0) + 1
+                                            current_state["round_count"] = rc
+                                            label = f"👨‍🏫 Teacher (문제 #{rc})"
+                                        
+                                        # 노드 시작 알림
+                                        if node_name in node_labels:
+                                            yield f"data: {json.dumps({'type': 'node_start', 'node': node_name, 'label': label}, ensure_ascii=False)}\n\n"
+                                        
+                                        # 전체 메시지 전송 (타이핑 효과는 프론트에서)
+                                        yield f"data: {json.dumps({'type': 'message', 'node': node_name, 'content': content}, ensure_ascii=False)}\n\n"
+                                        
+                                        # 노드 종료
+                                        if node_name in node_labels:
+                                            yield f"data: {json.dumps({'type': 'node_end', 'node': node_name})}\n\n"
+                                        
+                                        # 다음 노드 대기 표시
+                                        if node_name == "setup" and "퀴즈 설정 완료" in content:
+                                            yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 문제를 준비 중...'})}\n\n"
+                                        elif node_name == "teacher_question":
+                                            yield f"data: {json.dumps({'type': 'waiting', 'message': '🧑‍🎓 Student가 생각 중...'})}\n\n"
+                                        elif node_name == "student_answer":
+                                            yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 평가 중...'})}\n\n"
                                 
-                                # 노드별 라벨 설정
-                                label = node_labels.get(node_name, node_name)
-                                if node_name == "teacher_question":
-                                    rc = current_state.get("round_count", 0) + 1
-                                    current_state["round_count"] = rc
-                                    label = f"👨‍🏫 Teacher (문제 #{rc})"
-                                
-                                # 노드 시작 알림
-                                if node_name in node_labels:
-                                    yield f"data: {json.dumps({'type': 'node_start', 'node': node_name, 'label': label}, ensure_ascii=False)}\n\n"
-                                
-                                # 전체 메시지 전송 (타이핑 효과는 프론트에서)
-                                yield f"data: {json.dumps({'type': 'message', 'node': node_name, 'content': content}, ensure_ascii=False)}\n\n"
-                                
-                                # 노드 종료
-                                if node_name in node_labels:
-                                    yield f"data: {json.dumps({'type': 'node_end', 'node': node_name})}\n\n"
-                                
-                                # 다음 노드 대기 표시
-                                if node_name == "setup" and "퀴즈 설정 완료" in content:
-                                    yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 문제를 준비 중...'})}\n\n"
-                                elif node_name == "teacher_question":
-                                    yield f"data: {json.dumps({'type': 'waiting', 'message': '🧑‍🎓 Student가 생각 중...'})}\n\n"
-                                elif node_name == "student_answer":
-                                    yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 평가 중...'})}\n\n"
-                                
-                                await asyncio.sleep(0.1)
+                                        await asyncio.sleep(0.1)
             
             # 최종 상태 가져오기
             final_state = graph.get_state(config)
