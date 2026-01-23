@@ -1,7 +1,8 @@
 # 환경변수 및 민감정보
 .env
-.env.*
+.env.local
 langfuse-values.yaml
+k8s/langfuse-values.yaml
 
 # Python
 __pycache__/
