@@ -72,6 +72,10 @@ config:
       headers:
         Authorization: "Basic cGstbGYtYjZkMDllMjgtMDY2ZS00NTg0LWFlY2YtMjdkZjM1NzJjMDAyOnNrLWxmLTE0NTE4MjVlLTA4MGYtNDQzOS1iNjJiLTk0NDcwZjdhMmExMA=="
       compression: gzip
+    
+    # Azure Application Insights Exporter
+    azuremonitor:
+      connection_string: 
 
   service:
     # Telemetry 설정 - attribute 길이 제한 늘리기
@@ -82,4 +86,4 @@ config:
       traces:
         receivers: [otlp]
         processors: [memory_limiter, batch]
-        exporters: [debug, otlphttp/langfuse]
+        exporters: [debug, otlphttp/langfuse, azuremonitor]
