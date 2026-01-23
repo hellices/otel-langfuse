@@ -163,61 +163,24 @@ MIT
 
 ---
 
-## 📊 Azure Managed Grafana 대시보드
+## 📊 Observability 대시보드
 
-Azure Application Insights로 전송된 LangGraph 트레이스를 시각화하는 Grafana 대시보드입니다.
+### Langfuse (LLM Observability)
 
-### 대시보드 구성
+![Langfuse Dashboard](static/langfuse_only.png)
 
-| 섹션 | 패널 | 설명 |
-|------|------|------|
-| **Summary** | LangGraph Agent Summary | 전체 트레이스 수, LLM 호출 수, 평균 응답시간, 성공률, 토큰 사용량 |
-| **Execution Monitoring** | Agent Execution Trends | 시간별 성공/실패 트렌드 |
-| | LLM Call Trends | 시간별 LLM 호출 및 토큰 사용량 |
-| **Node Performance** | LangGraph Node Performance | 노드별 실행 횟수, 평균/P95 지연시간, 성공률 |
-| | Operation Duration Comparison | 오퍼레이션별 실행시간 비교 |
-| **LLM Performance** | LLM Model Performance | 모델/프로바이더별 호출 수, 지연시간, 토큰 사용량 |
-| **Sessions** | Recent Agent Sessions | 최근 에이전트 세션 목록 (클릭 시 상세 트레이스 확인) |
-| **Execution Flow** | Execution Flow Graph | LangGraph 노드 실행 흐름 시각화 |
-| **Trace View** | Agent Execution Trace | 분산 트레이스 타임라인 |
-| **Error Analysis** | Recent Errors | TraceId별 에러 그룹화 |
+### Azure Managed Grafana
 
-### Span Attributes 매핑
+OTel Collector에서 Azure Application Insights로 트레이스를 전송하고, Grafana에서 시각화합니다.
 
-```
-Model Name:
-  1순위: traceloop.association.properties.ls_model_name (예: gpt-5.2-chat)
-  2순위: llm.request.model
-  3순위: gen_ai.request.model
-  fallback: "unknown"
+![Azure App Insights](static/otel_azuremonitor_with_langfuse.png)
+![Azure Grafana with Langfuse](static/otel_azuremonitor_custom.png)
 
-Provider:
-  1순위: traceloop.association.properties.ls_provider (예: azure)
-  2순위: gen_ai.system
-  fallback: "unknown"
+**주요 패널:**
+- LangGraph Agent Summary (트레이스 수, LLM 호출, 토큰 사용량)
+- Node Performance (노드별 지연시간, 성공률)
+- LLM Model Performance (모델별 호출 수, 토큰)
+- Execution Flow Graph (노드 실행 흐름)
+- Distributed Trace View
 
-Tokens:
-  Total: llm.usage.total_tokens 또는 (gen_ai.usage.input_tokens + gen_ai.usage.output_tokens)
-  Input: gen_ai.usage.input_tokens 또는 llm.usage.prompt_tokens
-  Output: gen_ai.usage.output_tokens 또는 llm.usage.completion_tokens
-
-LangGraph Node:
-  traceloop.association.properties.langgraph_node 또는 name에서 "node_" 접두사 제거
-```
-
-### 대시보드 Import 방법
-
-1. **Azure Managed Grafana** 접속
-2. 좌측 메뉴 **Dashboards** → **New** → **Import**
-3. `k8s/azure-grafana-langgraph.json` 파일 업로드
-4. Data Source 선택 후 **Import**
-
-### Template Variables
-
-| 변수 | 설명 |
-|------|------|
-| `am_ds` | Azure Monitor Data Source |
-| `sub` | Azure Subscription |
-| `rg` | Resource Group |
-| `res` | Application Insights 리소스 |
-| `traceId` | 상세 조회할 Trace ID (자동 선택) |
+**대시보드 Import:** `k8s/azure-grafana-langgraph.json` 파일을 Azure managed Grafana에서 Import
