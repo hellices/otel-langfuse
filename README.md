@@ -10,12 +10,28 @@ LangGraph 기반 Teacher-Student 퀴즈 시스템에서 **OpenTelemetry Collecto
 │  (FastAPI)  │     │ Collector    │     │   (K8s)      │
 │ + Traceloop │     │   (K8s)      │     │              │
 └─────────────┘     └──────────────┘     └──────────────┘
-      OTLP/gRPC          OTLP/HTTP
+      OTLP/gRPC          OTLP/HTTP              │
+                              │                 │
+                              ▼                 │
+                    ┌──────────────┐            │
+                    │    Azure     │            │
+                    │ Application  │◀───────────┘
+                    │  Insights    │   (동일 트레이스)
+                    └──────────────┘
+                              │
+                              ▼
+                    ┌──────────────┐
+                    │    Azure     │
+                    │   Managed    │
+                    │   Grafana    │
+                    └──────────────┘
 ```
 
 - **Traceloop SDK**: LangChain/OpenAI 호출을 자동 계측하여 LLM input/output 캡처
-- **OTel Collector**: 트레이스를 수집하여 Langfuse로 전달
+- **OTel Collector**: 트레이스를 Langfuse와 Azure Application Insights로 동시 전달
 - **Langfuse**: LLM observability 대시보드
+- **Azure Application Insights**: 트레이스 저장소
+- **Azure Managed Grafana**: 커스텀 대시보드 시각화
 
 ## 📁 프로젝트 구조
 
@@ -30,8 +46,9 @@ otel-langfuse/
 ├── static/
 │   └── style.css        # 스타일시트
 └── k8s/
-    ├── langfuse-values.yaml          # Langfuse Helm values
-    └── otel-collector-values.yaml    # OTel Collector Helm values
+    ├── langfuse-values.yaml           # Langfuse Helm values
+    ├── otel-collector-values.yaml     # OTel Collector Helm values
+    └── azure-grafana-langgraph.json   # Azure Managed Grafana 대시보드
 ```
 
 ## 🚀 시작하기
@@ -122,12 +139,85 @@ Traceloop.init(
 ### OTel Collector 설정 (k8s/otel-collector-values.yaml)
 ```yaml
 exporters:
+  # Langfuse OTLP Exporter
   otlphttp/langfuse:
     endpoint: "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel"
     headers:
       Authorization: "Basic <base64-encoded-credentials>"
+  
+  # Azure Application Insights Exporter
+  azuremonitor:
+    connection_string: "<Application-Insights-Connection-String>"
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/langfuse, azuremonitor]
 ```
 
 ## 📝 License
 
 MIT
+
+---
+
+## 📊 Azure Managed Grafana 대시보드
+
+Azure Application Insights로 전송된 LangGraph 트레이스를 시각화하는 Grafana 대시보드입니다.
+
+### 대시보드 구성
+
+| 섹션 | 패널 | 설명 |
+|------|------|------|
+| **Summary** | LangGraph Agent Summary | 전체 트레이스 수, LLM 호출 수, 평균 응답시간, 성공률, 토큰 사용량 |
+| **Execution Monitoring** | Agent Execution Trends | 시간별 성공/실패 트렌드 |
+| | LLM Call Trends | 시간별 LLM 호출 및 토큰 사용량 |
+| **Node Performance** | LangGraph Node Performance | 노드별 실행 횟수, 평균/P95 지연시간, 성공률 |
+| | Operation Duration Comparison | 오퍼레이션별 실행시간 비교 |
+| **LLM Performance** | LLM Model Performance | 모델/프로바이더별 호출 수, 지연시간, 토큰 사용량 |
+| **Sessions** | Recent Agent Sessions | 최근 에이전트 세션 목록 (클릭 시 상세 트레이스 확인) |
+| **Execution Flow** | Execution Flow Graph | LangGraph 노드 실행 흐름 시각화 |
+| **Trace View** | Agent Execution Trace | 분산 트레이스 타임라인 |
+| **Error Analysis** | Recent Errors | TraceId별 에러 그룹화 |
+
+### Span Attributes 매핑
+
+```
+Model Name:
+  1순위: traceloop.association.properties.ls_model_name (예: gpt-5.2-chat)
+  2순위: llm.request.model
+  3순위: gen_ai.request.model
+  fallback: "unknown"
+
+Provider:
+  1순위: traceloop.association.properties.ls_provider (예: azure)
+  2순위: gen_ai.system
+  fallback: "unknown"
+
+Tokens:
+  Total: llm.usage.total_tokens 또는 (gen_ai.usage.input_tokens + gen_ai.usage.output_tokens)
+  Input: gen_ai.usage.input_tokens 또는 llm.usage.prompt_tokens
+  Output: gen_ai.usage.output_tokens 또는 llm.usage.completion_tokens
+
+LangGraph Node:
+  traceloop.association.properties.langgraph_node 또는 name에서 "node_" 접두사 제거
+```
+
+### 대시보드 Import 방법
+
+1. **Azure Managed Grafana** 접속
+2. 좌측 메뉴 **Dashboards** → **New** → **Import**
+3. `k8s/azure-grafana-langgraph.json` 파일 업로드
+4. Data Source 선택 후 **Import**
+
+### Template Variables
+
+| 변수 | 설명 |
+|------|------|
+| `am_ds` | Azure Monitor Data Source |
+| `sub` | Azure Subscription |
+| `rg` | Resource Group |
+| `res` | Application Insights 리소스 |
+| `traceId` | 상세 조회할 Trace ID (자동 선택) |
