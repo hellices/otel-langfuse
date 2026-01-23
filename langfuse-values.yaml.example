@@ -1,0 +1,35 @@
+# Langfuse Helm Values Template
+# Copy this file to langfuse-values.yaml and fill in your values
+
+clickhouse:
+  auth:
+    password: <YOUR_CLICKHOUSE_PASSWORD>
+
+postgresql:
+  auth:
+    password: <YOUR_POSTGRESQL_PASSWORD>
+
+redis:
+  auth:
+    password: <YOUR_REDIS_PASSWORD>
+
+s3:
+  deploy: true
+  bucket: langfuse
+  region: auto
+  endpoint: http://langfuse-s3:9000
+  forcePathStyle: true
+  accessKeyId:
+    value: <YOUR_S3_ACCESS_KEY>
+  secretAccessKey:
+    value: <YOUR_S3_SECRET_KEY>
+
+langfuse:
+  nextauth:
+    secret:
+      value: <YOUR_NEXTAUTH_SECRET>
+  salt:
+    value: <YOUR_SALT_VALUE>
+  web:
+    service:
+      type: LoadBalancer
