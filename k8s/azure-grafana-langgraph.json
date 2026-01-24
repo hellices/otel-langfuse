@@ -486,7 +486,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Performance metrics for each LangGraph node (setup, teacher_question, student_answer, teacher_evaluate)",
+      "description": "Performance metrics for each LangGraph node in the workflow",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -608,7 +608,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "dependencies \n| where name startswith \"node_\" or customDimensions has \"traceloop.association.properties.langgraph_node\"\n| extend node_name = coalesce(\n    tostring(customDimensions['traceloop.association.properties.langgraph_node']),\n    replace_string(name, \"node_\", \"\")\n)\n| summarize \n    Count = count(),\n    ['Avg Duration (s)'] = round(avg(duration) / 1000, 2),\n    ['P95 Duration (s)'] = round(percentile(duration, 95) / 1000, 2),\n    ['Success Rate (%)'] = round(countif(success == \"True\") * 100.0 / count(), 1)\n    by ['Node Name'] = node_name\n| order by Count desc",
+            "query": "// traceloop 자동 계측 span 기반 LLM Task 성능\ndependencies \n| where name has_any (\"langchain.task\", \"AzureChatOpenAI\", \"ChatOpenAI\", \"openai.chat\")\n| extend task_name = case(\n    name has \"task.\", extract(\"task\\\\.(.+)\", 1, name),\n    name has \"ChatOpenAI\", \"LLM Call\",\n    name\n)\n| extend task_type = case(\n    name has \"ChatOpenAI\" or name has \"openai\", \"llm\",\n    name has \"task\", \"task\",\n    \"other\"\n)\n| summarize \n    Count = count(),\n    ['Avg Duration (s)'] = round(avg(duration) / 1000, 2),\n    ['P95 Duration (s)'] = round(percentile(duration, 95) / 1000, 2),\n    ['Success Rate (%)'] = round(countif(success == \"True\") * 100.0 / count(), 1)\n    by ['Task Name'] = task_name, ['Type'] = task_type\n| order by Count desc",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -623,7 +623,7 @@
           "refId": "A"
         }
       ],
-      "title": "LangGraph Node Performance",
+      "title": "LangChain Task Performance",
       "type": "table"
     },
     {
@@ -1072,7 +1072,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// LangGraph Nodes - node level workflow visualization\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name startswith \"node_\"\r\n| project id = tostring(id), name, timestamp, duration\r\n| order by timestamp asc;\r\n// Create nodes with execution order\r\nspans\r\n| extend ['title'] = replace_string(name, \"node_\", \"\")\r\n| extend icon = case(\r\n    name has \"teacher_question\", \"help-circle\",\r\n    name has \"student_answer\", \"message-circle\",\r\n    name has \"teacher_evaluate\", \"check-circle\",\r\n    name has \"setup\", \"settings\",\r\n    \"circle\"\r\n)\r\n| project id, ['title'], icon\r\n| extend _type = \"nodes\"",
+            "query": "// LLM Task Flow Nodes - traceloop 자동 계측 기반\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name has_any (\"langchain.task\", \"AzureChatOpenAI\", \"ChatOpenAI\", \"openai.chat\", \"langchain.workflow\")\r\n| project id = tostring(id), name, timestamp, duration\r\n| order by timestamp asc;\r\n// Create nodes with dynamic icon based on span name\r\nspans\r\n| extend ['title'] = case(\r\n    name has \"task.\", extract(\"task\\\\.(.+)\", 1, name),\r\n    name has \"ChatOpenAI\", \"LLM\",\r\n    name has \"workflow\", \"Workflow\",\r\n    name\r\n)\r\n| extend icon = case(\r\n    name has \"ChatOpenAI\" or name has \"openai\", \"cpu\",\r\n    name has \"workflow\", \"git-branch\",\r\n    name has \"task\", \"play\",\r\n    \"circle\"\r\n)\r\n| project id, ['title'], icon\r\n| extend _type = \"nodes\"",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -1085,7 +1085,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// LangGraph Edges - node level workflow flow\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name startswith \"node_\"\r\n| project id = tostring(id), name, timestamp\r\n| order by timestamp asc\r\n| serialize rn = row_number();\r\n// Create edges by connecting sequential nodes\r\nlet edges = spans\r\n| join kind=inner (spans | extend prev_rn = rn - 1) on $left.rn == $right.prev_rn\r\n| project source = id, target = id1\r\n| extend id = strcat(source, \"_to_\", target)\r\n| distinct id, source, target;\r\nedges\r\n| extend _type = \"edges\"",
+            "query": "// LLM Task Flow Edges - traceloop 자동 계측 기반\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name has_any (\"langchain.task\", \"AzureChatOpenAI\", \"ChatOpenAI\", \"openai.chat\", \"langchain.workflow\")\r\n| project id = tostring(id), name, timestamp\r\n| order by timestamp asc\r\n| serialize rn = row_number();\r\n// Create edges by connecting sequential spans\r\nlet edges = spans\r\n| join kind=inner (spans | extend prev_rn = rn - 1) on $left.rn == $right.prev_rn\r\n| project source = id, target = id1\r\n| extend id = strcat(source, \"_to_\", target)\r\n| distinct id, source, target;\r\nedges\r\n| extend _type = \"edges\"",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],

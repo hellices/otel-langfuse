@@ -251,11 +251,12 @@ async def chat_stream(request: ChatRequest):
                 "configurable": {"thread_id": session_id},
             }
             
-            # OpenTelemetry span으로 트레이싱
+            # OpenTelemetry span으로 트레이싱 (Langfuse 최적화 속성 사용)
             with tracer.start_as_current_span("chat_stream") as span:
-                span.set_attribute("session_id", session_id)
-                span.set_attribute("user_input", user_input)
-                span.set_attribute("phase", phase)
+                # Langfuse Trace-Level Attributes (범용)
+                span.set_attribute("langfuse.trace.name", "langgraph-session")
+                span.set_attribute("langfuse.session.id", session_id)
+                span.set_attribute("langfuse.trace.input", user_input)
             
                 # 그래프 invoke 준비
                 invoke_state = {
@@ -276,46 +277,51 @@ async def chat_stream(request: ChatRequest):
                 }
                 
                 # stream_mode="updates"로 노드별 결과 스트리밍
+                # Note: traceloop-sdk가 LLM 호출(gen_ai.prompt, gen_ai.completion)을 자동 계측
+                # 여기서는 노드 레벨 메타데이터만 추가
+                final_output = ""  # 최종 출력 추적용
                 async for event in graph.astream(invoke_state, config=config, stream_mode="updates"):
                     for node_name, node_output in event.items():
-                        with tracer.start_as_current_span(f"node_{node_name}") as node_span:
-                            node_span.set_attribute("node_name", node_name)
-                            print(f"[DEBUG] node={node_name}, output_keys={node_output.keys() if isinstance(node_output, dict) else 'not dict'}")
+                        print(f"[DEBUG] node={node_name}, output_keys={node_output.keys() if isinstance(node_output, dict) else 'not dict'}")
+                        
+                        # 메시지 추출
+                        if isinstance(node_output, dict) and "messages" in node_output:
+                            for msg in node_output["messages"]:
+                                if hasattr(msg, "content") and msg.content:
+                                    content = msg.content
+                                    final_output = content  # 최종 출력 저장
+                                    
+                                    # 노드별 라벨 설정
+                                    label = node_labels.get(node_name, node_name)
+                                    if node_name == "teacher_question":
+                                        rc = current_state.get("round_count", 0) + 1
+                                        current_state["round_count"] = rc
+                                        label = f"👨‍🏫 Teacher (문제 #{rc})"
+                                    
+                                    # 노드 시작 알림
+                                    if node_name in node_labels:
+                                        yield f"data: {json.dumps({'type': 'node_start', 'node': node_name, 'label': label}, ensure_ascii=False)}\n\n"
+                                    
+                                    # 전체 메시지 전송 (타이핑 효과는 프론트에서)
+                                    yield f"data: {json.dumps({'type': 'message', 'node': node_name, 'content': content}, ensure_ascii=False)}\n\n"
+                                    
+                                    # 노드 종료
+                                    if node_name in node_labels:
+                                        yield f"data: {json.dumps({'type': 'node_end', 'node': node_name})}\n\n"
+                                    
+                                    # 다음 노드 대기 표시
+                                    if node_name == "setup" and "퀴즈 설정 완료" in content:
+                                        yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 문제를 준비 중...'})}\n\n"
+                                    elif node_name == "teacher_question":
+                                        yield f"data: {json.dumps({'type': 'waiting', 'message': '🧑‍🎓 Student가 생각 중...'})}\n\n"
+                                    elif node_name == "student_answer":
+                                        yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 평가 중...'})}\n\n"
                             
-                            # 메시지 추출
-                            if isinstance(node_output, dict) and "messages" in node_output:
-                                for msg in node_output["messages"]:
-                                    if hasattr(msg, "content") and msg.content:
-                                        content = msg.content
-                                        node_span.set_attribute("content_length", len(content))
-                                        
-                                        # 노드별 라벨 설정
-                                        label = node_labels.get(node_name, node_name)
-                                        if node_name == "teacher_question":
-                                            rc = current_state.get("round_count", 0) + 1
-                                            current_state["round_count"] = rc
-                                            label = f"👨‍🏫 Teacher (문제 #{rc})"
-                                        
-                                        # 노드 시작 알림
-                                        if node_name in node_labels:
-                                            yield f"data: {json.dumps({'type': 'node_start', 'node': node_name, 'label': label}, ensure_ascii=False)}\n\n"
-                                        
-                                        # 전체 메시지 전송 (타이핑 효과는 프론트에서)
-                                        yield f"data: {json.dumps({'type': 'message', 'node': node_name, 'content': content}, ensure_ascii=False)}\n\n"
-                                        
-                                        # 노드 종료
-                                        if node_name in node_labels:
-                                            yield f"data: {json.dumps({'type': 'node_end', 'node': node_name})}\n\n"
-                                        
-                                        # 다음 노드 대기 표시
-                                        if node_name == "setup" and "퀴즈 설정 완료" in content:
-                                            yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 문제를 준비 중...'})}\n\n"
-                                        elif node_name == "teacher_question":
-                                            yield f"data: {json.dumps({'type': 'waiting', 'message': '🧑‍🎓 Student가 생각 중...'})}\n\n"
-                                        elif node_name == "student_answer":
-                                            yield f"data: {json.dumps({'type': 'waiting', 'message': '👨‍🏫 Teacher가 평가 중...'})}\n\n"
-                                
-                                        await asyncio.sleep(0.1)
+                                    await asyncio.sleep(0.1)
+                
+                # Trace output 설정 (최종 응답)
+                if final_output:
+                    span.set_attribute("langfuse.trace.output", final_output[:10000] if len(final_output) > 10000 else final_output)
             
             # 최종 상태 가져오기
             final_state = graph.get_state(config)
