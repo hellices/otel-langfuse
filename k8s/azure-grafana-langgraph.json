@@ -1072,7 +1072,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// LLM Task Flow Nodes - traceloop 자동 계측 기반\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name has_any (\"langchain.task\", \"AzureChatOpenAI\", \"ChatOpenAI\", \"openai.chat\", \"langchain.workflow\")\r\n| project id = tostring(id), name, timestamp, duration\r\n| order by timestamp asc;\r\n// Create nodes with dynamic icon based on span name\r\nspans\r\n| extend ['title'] = case(\r\n    name has \"task.\", extract(\"task\\\\.(.+)\", 1, name),\r\n    name has \"ChatOpenAI\", \"LLM\",\r\n    name has \"workflow\", \"Workflow\",\r\n    name\r\n)\r\n| extend icon = case(\r\n    name has \"ChatOpenAI\" or name has \"openai\", \"cpu\",\r\n    name has \"workflow\", \"git-branch\",\r\n    name has \"task\", \"play\",\r\n    \"circle\"\r\n)\r\n| project id, ['title'], icon\r\n| extend _type = \"nodes\"",
+            "query": "// LangGraph 주요 Task Flow\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name endswith \".task\"\r\n| where not(name has \"route\")  // 라우터 task 제외\r\n| project id = tostring(id), name, timestamp, duration\r\n| order by timestamp asc;\r\n// 노드 생성 - task 이름만 추출 (예: teacher_question.task → teacher_question)\r\nspans\r\n| extend ['title'] = replace_string(name, \".task\", \"\")\r\n| extend mainstat = strcat(round(duration/1000, 2), \"s\")\r\n| project id, ['title'], mainstat\r\n| extend _type = \"nodes\"",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -1085,7 +1085,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// LLM Task Flow Edges - traceloop 자동 계측 기반\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name has_any (\"langchain.task\", \"AzureChatOpenAI\", \"ChatOpenAI\", \"openai.chat\", \"langchain.workflow\")\r\n| project id = tostring(id), name, timestamp\r\n| order by timestamp asc\r\n| serialize rn = row_number();\r\n// Create edges by connecting sequential spans\r\nlet edges = spans\r\n| join kind=inner (spans | extend prev_rn = rn - 1) on $left.rn == $right.prev_rn\r\n| project source = id, target = id1\r\n| extend id = strcat(source, \"_to_\", target)\r\n| distinct id, source, target;\r\nedges\r\n| extend _type = \"edges\"",
+            "query": "// LangGraph 주요 Task Flow Edges\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name endswith \".task\"\r\n| where not(name has \"route\")  // 라우터 task 제외\r\n| project id = tostring(id), name, timestamp\r\n| order by timestamp asc\r\n| serialize rn = row_number();\r\n// 순차적 연결\r\nlet edges = spans\r\n| join kind=inner (spans | extend prev_rn = rn - 1) on $left.rn == $right.prev_rn\r\n| project source = id, target = id1\r\n| extend id = strcat(source, \"_to_\", target)\r\n| distinct id, source, target;\r\nedges\r\n| extend _type = \"edges\"",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
