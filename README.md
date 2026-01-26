@@ -174,7 +174,7 @@ MIT
 OTel Collector에서 Azure Application Insights로 트레이스를 전송하고, Grafana에서 시각화합니다.
 
 ![Azure App Insights](static/otel_azuremonitor_with_langfuse.png)
-![Azure Grafana with Langfuse](static/otel_azuremonitor_custom.png)
+![Azure Grafana with Langfuse](static/azure_grafana.gif)
 
 **주요 패널:**
 - LangGraph Agent Summary (트레이스 수, LLM 호출, 토큰 사용량)

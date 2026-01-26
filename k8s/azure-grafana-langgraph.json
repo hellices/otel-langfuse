@@ -1158,13 +1158,9 @@
             ],
             "resultFormat": "trace",
             "traceTypes": [
-              "availabilityResults",
               "dependencies",
-              "customEvents",
               "exceptions",
-              "pageViews",
-              "requests",
-              "traces"
+              "requests"
             ]
           },
           "queryType": "Azure Traces",
