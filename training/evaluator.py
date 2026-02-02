@@ -24,7 +24,7 @@ def create_azure_client() -> AzureOpenAI:
 
 def evaluate_answer(student_answer: str, expected_answer: str, question: str) -> float:
     """
-    LLM-as-Judge로 학생 답변 평가
+    LLM-as-Judge로 학생 답변 평가 (엄격 모드)
     
     Args:
         student_answer: 학생의 답변
@@ -36,28 +36,39 @@ def evaluate_answer(student_answer: str, expected_answer: str, question: str) ->
     """
     client = create_azure_client()
     
-    eval_prompt = f"""당신은 채점자입니다. 학생 답변이 정답과 의미적으로 일치하는지 판단하세요.
+    eval_prompt = f"""당신은 매우 엄격한 채점자입니다. 학생의 최종 답변만 평가합니다.
 
 문제: {question}
 정답: {expected_answer}
 학생 답변: {student_answer}
 
-평가 기준:
-- 표현이 달라도 의미가 같으면 정답 (예: "H₂O" = "H2O", "세종대왕" = "세종")
-- 정답이 포함되어 있으면 정답 (예: 정답 "goes"에 "He goes to school"도 정답)
-- 숫자는 값이 같으면 정답 (예: "15" = "15입니다" = "정답은 15")
-- 언어가 달라도 의미가 같으면 정답 (예: "apple" = "애플")
+엄격한 평가 기준:
+1. 학생이 제시한 "최종 숫자/값"만 정답과 비교하세요.
+2. 풀이 과정이 맞아도 최종 답이 틀리면 0점입니다.
+3. 정답과 정확히 일치하는 값이 최종 답변에 없으면 0점입니다.
+4. "알 수 없다", "정보 부족" 등의 답변은 정답이 그것일 때만 1점입니다.
 
-1 (정답) 또는 0 (오답)만 출력하세요:"""
+예시:
+- 정답 "0", 학생 "방주는 노아가 만들었으므로 모세는 0쌍을 태웠습니다" → 최종값 0 → 1점
+- 정답 "0", 학생 "노아가 7쌍씩 태웠습니다" → 최종값 7 → 0점  
+- 정답 "47", 학생 "절반은 24일" → 최종값 24 → 0점
+- 정답 "철수", 학생 "셋째는 삼월입니다" → 최종값 삼월 → 0점
+- 정답 "2", 학생 "2개 가져가면 3개 남습니다" → 최종값 3 → 0점 (남은 개수가 아니라 가져간 개수를 물었음)
+
+학생의 최종 답변 값이 정답 "{expected_answer}"와 정확히 일치하면 1, 아니면 0을 출력하세요:"""
 
     response = client.chat.completions.create(
         model=AZURE_OPENAI_DEPLOYMENT_NAME,
         messages=[{"role": "user", "content": eval_prompt}],
     )
     
-    result = response.choices[0].message.content.strip()
+    content = response.choices[0].message.content
+    if content is None:
+        return 0.0
     
-    # 1 또는 0 추출
-    if "1" in result:
+    result = content.strip()
+    
+    # 1만 명확히 있을 때만 정답
+    if result == "1" or result.startswith("1"):
         return 1.0
     return 0.0

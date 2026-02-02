@@ -72,7 +72,14 @@ def quiz_agent(task: QuizTask, prompt_template: agl.PromptTemplate) -> float:
         ],
     )
     
-    student_answer = response.choices[0].message.content.strip()
+    # Content filter로 인해 None이 반환될 수 있음
+    content = response.choices[0].message.content
+    if content is None:
+        print(f"  Q: {question[:40]}... | Expected: {expected_answer} | Got: [FILTERED] | R: 0.0")
+        agl.emit_reward(0.0)
+        return 0.0
+    
+    student_answer = content.strip()
     
     # Reward 계산 (LLM-as-Judge)
     reward = evaluate_answer(student_answer, expected_answer, question)
