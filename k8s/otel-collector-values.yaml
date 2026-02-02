@@ -48,6 +48,23 @@ config:
             allowed_headers:
               - "*"
 
+  connectors:
+    # 라우팅 커넥터: service.name 기반 분기
+    # Note: routing connector는 resource context에서만 동작 (span attributes 접근 불가)
+    routing/traces:
+      default_pipelines: [traces/production]
+      error_mode: ignore
+      table:
+        # Agent Lightning 전용 서비스명 패턴
+        - condition: IsMatch(resource.attributes["service.name"], ".*agentlightning.*")
+          pipelines: [traces/training]
+        # service.name에 "training" 포함 시 학습 파이프라인으로
+        - condition: IsMatch(resource.attributes["service.name"], ".*training.*")
+          pipelines: [traces/training]
+        # telemetry.sdk.name이 agentlightning인 경우
+        - condition: resource.attributes["telemetry.sdk.name"] == "agentlightning"
+          pipelines: [traces/training]
+
   processors:
     batch:
       timeout: 5s
@@ -63,27 +80,56 @@ config:
           statements: []
 
   exporters:
+    # debug exporter - basic: span 수만 표시, normal: 요약, detailed: 전체 내용
     debug:
-      verbosity: detailed
+      verbosity: basic
     
-    # Langfuse OTLP Exporter
+    # Langfuse OTLP Exporter (모든 트래픽)
     otlphttp/langfuse:
       endpoint: "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel"
       headers:
-        Authorization: "Basic cGstbGYtYjZkMDllMjgtMDY2ZS00NTg0LWFlY2YtMjdkZjM1NzJjMDAyOnNrLWxmLTE0NTE4MjVlLTA4MGYtNDQzOS1iNjJiLTk0NDcwZjdhMmExMA=="
+        Authorization: "Basic cGstbGYtZjljYjQzNzYtMmIyNy00NTExLTg4M2ItZGJlMTgwNmJlZThkOnNrLWxmLTAzMzFjY2QzLTY3ODgtNGMyYi1iNzk3LTcxMDY3OTFhYzY0Nw=="
       compression: gzip
     
-    # Azure Application Insights Exporter
-    azuremonitor:
-      connection_string: 
+    # Azure Application Insights - 프로덕션 모니터링용
+    azuremonitor/production:
+      connection_string: "InstrumentationKey=1aaece2d-7604-4552-824e-038261e721d4;IngestionEndpoint=https://eastus2-3.in.applicationinsights.azure.com/;LiveEndpoint=https://eastus2.livediagnostics.monitor.azure.com/;ApplicationId=c29b43f2-9116-414b-9229-bdd9408e1fe3"
+    
+    # Azure Application Insights - RL 학습 모니터링용 (별도 App Insights)
+    # TODO: 학습용 App Insights 생성 후 connection_string 교체
+    azuremonitor/training:
+      connection_string: "InstrumentationKey=25f83ea8-3fda-4e76-8c27-579c09cb6d58;IngestionEndpoint=https://koreacentral-0.in.applicationinsights.azure.com/;LiveEndpoint=https://koreacentral.livediagnostics.monitor.azure.com/;ApplicationId=00161804-5a89-4e05-82cb-06338fc076a0"
 
   service:
     # Telemetry 설정 - attribute 길이 제한 늘리기
     telemetry:
       logs:
         level: info
+      # OTLP Exporter의 attribute 값 길이 제한 해제
+      resource:
+        "service.name": "otel-collector"
     pipelines:
+      # 입구 파이프라인: 모든 트래픽 수신 → 라우팅 커넥터로 전달
       traces:
         receivers: [otlp]
         processors: [memory_limiter, batch]
-        exporters: [debug, otlphttp/langfuse, azuremonitor]
+        exporters: [routing/traces]
+      
+      # 프로덕션 파이프라인: 웹 서비스 트래픽
+      traces/production:
+        receivers: [routing/traces]
+        processors: []
+        exporters: [otlphttp/langfuse, azuremonitor/production]
+      
+      # 학습 파이프라인: RL 학습 트래픽
+      traces/training:
+        receivers: [routing/traces]
+        processors: []
+        exporters: [otlphttp/langfuse, azuremonitor/training]
+
+# 환경 변수로 attribute 길이 제한 설정 (중요!)
+extraEnvs:
+  - name: OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT
+    value: "65535"
+  - name: OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT
+    value: "65535"

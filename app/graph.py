@@ -1,6 +1,8 @@
 """LangGraph Multi-Agent: Teacher-Student Quiz System with OpenTelemetry Tracing"""
 from typing import Annotated, TypedDict, Optional, Callable
 from enum import Enum
+from pathlib import Path
+import yaml
 
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
@@ -8,12 +10,21 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.checkpoint.memory import MemorySaver
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import (
     AZURE_OPENAI_ENDPOINT,
     AZURE_OPENAI_API_KEY,
     AZURE_OPENAI_DEPLOYMENT_NAME,
     AZURE_OPENAI_API_VERSION,
 )
+
+
+def load_prompts() -> dict:
+    """프롬프트 YAML 로드"""
+    prompts_path = Path(__file__).parent / "prompts.yaml"
+    with open(prompts_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
 
 class QuizPhase(str, Enum):
@@ -199,21 +210,13 @@ def create_graph():
 
 
 def get_teacher_question_prompt(difficulty: str, subject: str, round_count: int) -> list:
-    """Teacher 문제 출제 프롬프트 생성"""
-    teacher_prompt = f"""당신은 친절하고 격려하는 선생님(Teacher Agent)입니다.
-학생에게 {subject} 분야의 {difficulty} 난이도 문제를 출제해야 합니다.
-
-규칙:
-1. 문제는 명확하고 답이 있는 것이어야 합니다
-2. {difficulty} 난이도에 맞게 출제하세요:
-   - 쉬움: 기초적인 개념, 간단한 계산
-   - 보통: 약간의 사고력이 필요한 문제
-   - 어려움: 깊은 이해와 응용력이 필요한 문제
-3. 문제만 출제하고, 답은 말하지 마세요
-4. 친근하고 격려하는 톤을 유지하세요
-
-현재 {round_count}번째 문제입니다.
-"""
+    """Teacher 문제 출제 프롬프트 생성 (YAML에서 로드)"""
+    prompts = load_prompts()
+    teacher_prompt = prompts["teacher_question"].format(
+        difficulty=difficulty,
+        subject=subject,
+        round_count=round_count,
+    )
     return [
         SystemMessage(content=teacher_prompt),
         HumanMessage(content=f"{subject} 분야의 {difficulty} 난이도 문제를 출제해주세요.")
@@ -221,23 +224,10 @@ def get_teacher_question_prompt(difficulty: str, subject: str, round_count: int)
 
 
 def get_student_answer_prompt(question: str, difficulty: str) -> list:
-    """Student 답변 프롬프트 생성"""
-    if difficulty == "쉬움":
-        student_persona = "열심히 공부하는 초등학생으로, 대부분의 문제를 잘 풀지만 가끔 실수합니다."
-    elif difficulty == "보통":
-        student_persona = "호기심 많은 중학생으로, 적극적으로 풀이 과정을 보여주며 약 70% 정도의 정답률을 보입니다."
-    else:
-        student_persona = "도전적인 고등학생으로, 어려운 문제도 논리적으로 접근하지만 완벽하지 않을 수 있습니다."
-    
-    student_prompt = f"""당신은 {student_persona}
-선생님의 문제에 답변해야 합니다.
-
-규칙:
-1. 풀이 과정을 보여주세요
-2. 최선을 다해 답하되, 확실하지 않으면 "잘 모르겠어요"라고 솔직히 말해도 됩니다
-3. 학생답게 자연스러운 말투를 사용하세요
-4. 답변 후 선생님의 피드백을 기다리세요
-"""
+    """Student 답변 프롬프트 생성 (YAML에서 로드)"""
+    prompts = load_prompts()
+    persona = prompts["student_persona"].get(difficulty, "학생입니다.")
+    student_prompt = prompts["student_answer"].format(persona=persona)
     return [
         SystemMessage(content=student_prompt),
         HumanMessage(content=f"선생님 문제: {question}\n\n이 문제에 답해보세요.")
@@ -245,20 +235,12 @@ def get_student_answer_prompt(question: str, difficulty: str) -> list:
 
 
 def get_teacher_evaluate_prompt(question: str, student_answer: str) -> list:
-    """Teacher 평가 프롬프트 생성"""
-    eval_prompt = f"""당신은 친절하고 격려하는 선생님(Teacher Agent)입니다.
-학생의 답변을 평가하고 피드백을 제공해야 합니다.
-
-문제: {question}
-학생 답변: {student_answer}
-
-규칙:
-1. 먼저 정답 여부를 명확히 알려주세요 (⭕ 정답 / ❌ 오답 / 🔺 부분 정답)
-2. 정답인 경우: 칭찬하고 추가 설명을 해주세요
-3. 오답인 경우: 격려하며 올바른 답과 설명을 알려주세요
-4. 핵심 개념이나 팁을 짧게 설명해주세요
-5. 친절하고 교육적인 톤을 유지하세요
-"""
+    """Teacher 평가 프롬프트 생성 (YAML에서 로드)"""
+    prompts = load_prompts()
+    eval_prompt = prompts["teacher_evaluate"].format(
+        question=question,
+        student_answer=student_answer,
+    )
     return [
         SystemMessage(content=eval_prompt),
         HumanMessage(content="학생의 답변을 평가해주세요.")
