@@ -52,7 +52,8 @@ OpenTelemetry는 GenAI(Generative AI) 시스템의 관측성(Observability)을 �
 |-----------|------|------|------|------|
 | `gen_ai.usage.input_tokens` | int | ✅ | 입력 토큰 수 | `120` |
 | `gen_ai.usage.output_tokens` | int | ✅ | 출력 토큰 수 | `300` |
-| `gen_ai.token.type` | string | ✅ (메트릭용) | 토큰 유형 | `"input"`, `"output"` |
+
+> **참고**: `gen_ai.token.type` 속성은 Span이 아닌 [Metrics 명세](#metrics-명세)에서 필수로 사용됩니다.
 
 ### 응답 Attributes
 
@@ -166,8 +167,8 @@ GenAI 이벤트는 LLM 상호작용의 입력, 출력, 상태를 캡처합니다
 ```kusto
 // OpenTelemetry 표준과 LangChain 계측 모두 지원
 Input = sum(toint(coalesce(
-    customDimensions['gen_ai.usage.input_tokens'],      -- OTel GenAI 표준
-    customDimensions['llm.usage.prompt_tokens'],        -- 이전 LangChain 계측
+    customDimensions['gen_ai.usage.input_tokens'],      // OTel GenAI 표준
+    customDimensions['llm.usage.prompt_tokens'],        // 이전 LangChain 계측
     "0"
 )))
 ```
