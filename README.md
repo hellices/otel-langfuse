@@ -150,3 +150,17 @@ helm install otel-collector open-telemetry/opentelemetry-collector \
 
 ### Azure Grafana
 ![Azure Grafana](static/azure_grafana.gif)
+
+---
+
+## 📖 문서
+
+### OpenTelemetry AI Semantic Conventions
+
+대시보드 구성 및 OpenTelemetry GenAI 시맨틱 컨벤션에 대한 상세 가이드:
+
+- **[OpenTelemetry Semantic Conventions 가이드](docs/opentelemetry-semantic-conventions.md)**
+  - GenAI Span Attributes 명세
+  - Metrics 및 Events 명세
+  - 대시보드 구현 분석
+  - Kusto 쿼리 예제
