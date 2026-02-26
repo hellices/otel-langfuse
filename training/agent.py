@@ -16,6 +16,10 @@ from config import (
 from .dataset import QuizTask
 from .evaluator import evaluate_answer
 
+# 모듈 레벨 캐시 (rollout마다 재생성 방지)
+_cached_client = None
+_cached_prompts = None
+
 
 def load_prompts() -> dict:
     """app/prompts.yaml에서 프롬프트 로드"""
@@ -33,12 +37,15 @@ def load_prompts() -> dict:
 
 
 def create_azure_client() -> AzureOpenAI:
-    """Azure OpenAI 클라이언트 생성"""
-    return AzureOpenAI(
-        azure_endpoint=AZURE_OPENAI_ENDPOINT,
-        api_key=AZURE_OPENAI_API_KEY,
-        api_version=AZURE_OPENAI_API_VERSION,
-    )
+    """Azure OpenAI 클라이언트 생성 (싱글톤)"""
+    global _cached_client
+    if _cached_client is None:
+        _cached_client = AzureOpenAI(
+            azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            api_key=AZURE_OPENAI_API_KEY,
+            api_version=AZURE_OPENAI_API_VERSION,
+        )
+    return _cached_client
 
 
 @agl.rollout
@@ -55,8 +62,11 @@ def quiz_agent(task: QuizTask, prompt_template: agl.PromptTemplate) -> float:
     Returns:
         reward: 1.0 (정답) 또는 0.0 (오답)
     """
+    global _cached_prompts
     client = create_azure_client()
-    prompts = load_prompts()
+    if _cached_prompts is None:
+        _cached_prompts = load_prompts()
+    prompts = _cached_prompts
     
     question = task["question"]
     expected_answer = task["expected_answer"]

@@ -151,12 +151,16 @@ async def lifespan(app: FastAPI):
     print(f"✅ LangGraph initialized: {AZURE_OPENAI_DEPLOYMENT_NAME}")
     yield
     print("Shutting down...")
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, 'force_flush'):
+        provider.force_flush()
+        provider.shutdown()
 
 
 # === FastAPI App ===
 app = FastAPI(title="Teacher-Student Quiz", version="1.0.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent.parent / "static"), name="static")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 
 
 # === Routes ===

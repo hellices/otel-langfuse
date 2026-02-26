@@ -182,7 +182,7 @@ class DetailedTrainingHook(agl.Hook):
             avg_reward = 0.0
 
             if rewards:
-                valid_reward_values = [r['value'] for r in rewards if r['value']]
+                valid_reward_values = [r['value'] for r in rewards if r['value'] is not None]
                 if valid_reward_values:
                     avg_reward = sum(valid_reward_values) / len(valid_reward_values)
                 parent_span.set_attribute("rewards.average", avg_reward)
