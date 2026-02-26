@@ -104,11 +104,13 @@ def build_invoke_state(user_input: str, phase: str, state: dict) -> dict:
 
 
 def update_session_from_result(session_id: str, result: dict):
+    existing = session_states.get(session_id, {})
     session_states[session_id] = {
         "phase": result.get("phase", QuizPhase.SETUP),
         "difficulty": result.get("difficulty"),
         "subject": result.get("subject"),
         "round_count": result.get("round_count", 0),
+        "last_accessed": existing.get("last_accessed", time.time()),
     }
 
 
