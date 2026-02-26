@@ -68,7 +68,7 @@ def evaluate_answer(student_answer: str, expected_answer: str, question: str) ->
     
     result = content.strip()
     
-    # 1만 명확히 있을 때만 정답
-    if result == "1" or result.startswith("1"):
+    # 정확히 "1"인 경우만 정답 ("10", "1.0" 등 오탐 방지)
+    if result == "1":
         return 1.0
     return 0.0

@@ -107,15 +107,12 @@ def initial_prompt_template() -> agl.PromptTemplate:
     base_prompt = prompts.get("student_answer", "문제에 답하세요.")
     
     return agl.PromptTemplate(
-        template=f"""당신은 {{persona}}
-
-{base_prompt}
+        template=f"""{base_prompt}
 
 문제의 난이도: {{difficulty}}
 
 답변 형식:
 - 최종 답을 "정답은 [답]입니다" 형식으로 명확히 제시하세요
-- 숫자 문제는 계산 결과 숫자만 답하세요
 - 간결하게 답하세요""",
         engine="f-string",
     )

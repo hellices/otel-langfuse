@@ -36,30 +36,41 @@ from config import (
 os.environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", OTEL_EXPORTER_OTLP_ENDPOINT)
 os.environ.setdefault("OTEL_EXPORTER_OTLP_INSECURE", "true")
 os.environ.setdefault("OTEL_SERVICE_NAME", "agentlightning-training")
+os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", "65535")
+os.environ.setdefault("OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT", "65535")
 
-from .agent import quiz_agent, initial_prompt_template
-from .dataset import create_dataset
+from training.agent import quiz_agent, initial_prompt_template
+from training.dataset import create_dataset
 
 # 학습 상세 로깅을 위한 전역 tracer
 _azure_tracer = None
+_azure_provider = None
 
 
 def get_azure_tracer():
     """Azure OTLP tracer 싱글톤"""
-    global _azure_tracer
+    global _azure_tracer, _azure_provider
     if _azure_tracer is None:
         resource = Resource.create({
             "service.name": "agentlightning-training-detail",
             "service.version": "1.0.0",
         })
-        provider = TracerProvider(resource=resource)
+        _azure_provider = TracerProvider(resource=resource)
         exporter = OTLPSpanExporter(
             endpoint=OTEL_EXPORTER_OTLP_ENDPOINT,
             insecure=True,
         )
-        provider.add_span_processor(BatchSpanProcessor(exporter))
-        _azure_tracer = provider.get_tracer("apo-training")
+        _azure_provider.add_span_processor(BatchSpanProcessor(exporter))
+        _azure_tracer = _azure_provider.get_tracer("apo-training")
     return _azure_tracer
+
+
+def shutdown_azure_tracer():
+    """학습 종료 시 TracerProvider flush/shutdown"""
+    global _azure_provider
+    if _azure_provider is not None:
+        _azure_provider.force_flush()
+        _azure_provider.shutdown()
 
 
 class DetailedTrainingHook(agl.Hook):
@@ -336,7 +347,6 @@ def main():
         with tracer_inst.start_as_current_span("prompt.optimized_final") as span:
             span.set_attribute("prompt.type", "final_optimized")
             span.set_attribute("prompt.content", optimized_text[:4000])
-            span.set_attribute("prompt.full_content", optimized_text)  # 전체 저장
             span.set_attribute("prompt.length", len(optimized_text))
             span.set_attribute("prompt.best_reward", summary["best_reward"])
             
@@ -380,6 +390,9 @@ def main():
         with open(output_path, "w") as f:
             f.write(optimized_text)
         print(f"\n💾 Saved to: {output_path}")
+
+    # TracerProvider flush/shutdown (마지막 batch 유실 방지)
+    shutdown_azure_tracer()
 
     return result
 
