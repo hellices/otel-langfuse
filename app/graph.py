@@ -17,6 +17,8 @@ from config import (
     AZURE_OPENAI_API_KEY,
     AZURE_OPENAI_DEPLOYMENT_NAME,
     AZURE_OPENAI_API_VERSION,
+    USE_DEFAULT_CREDENTIAL,
+    AZURE_TOKEN_PROVIDER,
 )
 
 
@@ -74,14 +76,18 @@ def clear_streaming_callback(session_id: str):
 
 
 def create_llm(streaming: bool = False):
-    """LLM 인스턴스 생성"""
-    return AzureChatOpenAI(
+    """LLM 인스턴스 생성 (API Key 또는 DefaultAzureCredential)"""
+    kwargs = dict(
         azure_endpoint=AZURE_OPENAI_ENDPOINT,
-        api_key=AZURE_OPENAI_API_KEY,
         azure_deployment=AZURE_OPENAI_DEPLOYMENT_NAME,
         api_version=AZURE_OPENAI_API_VERSION,
         streaming=streaming,
     )
+    if USE_DEFAULT_CREDENTIAL:
+        kwargs["azure_ad_token_provider"] = AZURE_TOKEN_PROVIDER
+    else:
+        kwargs["api_key"] = AZURE_OPENAI_API_KEY
+    return AzureChatOpenAI(**kwargs)
 
 
 def create_graph():

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -2265,7 +2265,9 @@ dependencies = [
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "langgraph" },
+    { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-instrumentation-langchain" },
+    { name = "opentelemetry-sdk" },
     { name = "poml" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -2279,7 +2281,9 @@ requires-dist = [
     { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=0.2.0" },
+    { name = "opentelemetry-exporter-otlp", specifier = ">=1.27.0" },
     { name = "opentelemetry-instrumentation-langchain", specifier = ">=0.30.0" },
+    { name = "opentelemetry-sdk", specifier = ">=1.27.0" },
     { name = "poml", specifier = ">=0.0.8" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },

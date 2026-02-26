@@ -17,6 +17,7 @@ dependencies = [
     "pyyaml>=6.0",  # YAML 프롬프트 파일 로드
     "opentelemetry-sdk>=1.27.0",
     "opentelemetry-exporter-otlp>=1.27.0",
+    "azure-identity>=1.15.0",  # DefaultAzureCredential (AKS Workload Identity)
 ]
 
 [project.scripts]
