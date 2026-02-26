@@ -2,6 +2,7 @@
 import asyncio
 import json
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, AsyncGenerator
@@ -30,9 +31,10 @@ from .graph import create_graph, QuizPhase
 # === Globals ===
 graph = None
 tracer = None
-session_states: dict = {}
+session_states: dict = {}  # {session_id: {"state": ..., "last_accessed": timestamp}}
 
 # === Constants ===
+SESSION_TTL_SECONDS = 3600  # 1시간 미사용 세션 정리
 RESET_KEYWORDS = ["새로", "리셋", "reset", "다시", "처음"]
 NEXT_KEYWORDS = ["다음", "계속", "next", "continue", "더"]
 NODE_LABELS = {
@@ -59,10 +61,18 @@ def get_initial_state() -> dict:
 
 
 def get_session(session_id: str) -> tuple[str, dict]:
-    """세션 ID와 상태 반환 (없으면 생성)"""
+    """세션 ID와 상태 반환 (없으면 생성), 오래된 세션 정리"""
+    # 오래된 세션 정리
+    now = time.time()
+    expired = [k for k, v in session_states.items() if now - v.get("last_accessed", 0) > SESSION_TTL_SECONDS]
+    for k in expired:
+        del session_states[k]
+
     sid = session_id or str(uuid4())
     if sid not in session_states:
-        session_states[sid] = get_initial_state()
+        session_states[sid] = {**get_initial_state(), "last_accessed": now}
+    else:
+        session_states[sid]["last_accessed"] = now
     return sid, session_states[sid]
 
 
@@ -198,42 +208,45 @@ async def chat_stream(request: ChatRequest):
             span.set_attribute("langfuse.trace.input", user_input)
             
             final_output = ""
-            async for event in graph.astream(invoke_state, config=config, stream_mode="updates"):
-                for node_name, node_output in event.items():
-                    if not isinstance(node_output, dict) or "messages" not in node_output:
-                        continue
-                    
-                    for msg in node_output["messages"]:
-                        if not (hasattr(msg, "content") and msg.content):
+            try:
+                async for event in graph.astream(invoke_state, config=config, stream_mode="updates"):
+                    for node_name, node_output in event.items():
+                        if not isinstance(node_output, dict) or "messages" not in node_output:
                             continue
                         
-                        content = msg.content
-                        final_output = content
-                        
-                        # 노드 라벨
-                        label = NODE_LABELS.get(node_name, node_name)
-                        if node_name == "teacher_question":
-                            state["round_count"] = state.get("round_count", 0) + 1
-                            label = f"👨‍🏫 Teacher (문제 #{state['round_count']})"
-                        
-                        # SSE 이벤트 전송
-                        if node_name in NODE_LABELS:
-                            yield sse_event({"type": "node_start", "node": node_name, "label": label})
-                        
-                        yield sse_event({"type": "message", "node": node_name, "content": content})
-                        
-                        if node_name in NODE_LABELS:
-                            yield sse_event({"type": "node_end", "node": node_name})
-                        
-                        # 대기 메시지
-                        waiting_msgs = {
-                            "teacher_question": "🧑‍🎓 Student가 생각 중...",
-                            "student_answer": "👨‍🏫 Teacher가 평가 중...",
-                        }
-                        if node_name in waiting_msgs:
-                            yield sse_event({"type": "waiting", "message": waiting_msgs[node_name]})
-                        
-                        await asyncio.sleep(0.1)
+                        for msg in node_output["messages"]:
+                            if not (hasattr(msg, "content") and msg.content):
+                                continue
+                            
+                            content = msg.content
+                            final_output = content
+                            
+                            # 노드 라벨
+                            label = NODE_LABELS.get(node_name, node_name)
+                            if node_name == "teacher_question":
+                                state["round_count"] = state.get("round_count", 0) + 1
+                                label = f"👨‍🏫 Teacher (문제 #{state['round_count']})"
+                            
+                            # SSE 이벤트 전송
+                            if node_name in NODE_LABELS:
+                                yield sse_event({"type": "node_start", "node": node_name, "label": label})
+                            
+                            yield sse_event({"type": "message", "node": node_name, "content": content})
+                            
+                            if node_name in NODE_LABELS:
+                                yield sse_event({"type": "node_end", "node": node_name})
+                            
+                            # 대기 메시지
+                            waiting_msgs = {
+                                "teacher_question": "🧑‍🎓 Student가 생각 중...",
+                                "student_answer": "👨‍🏫 Teacher가 평가 중...",
+                            }
+                            if node_name in waiting_msgs:
+                                yield sse_event({"type": "waiting", "message": waiting_msgs[node_name]})
+                            
+                            await asyncio.sleep(0.1)
+            except Exception as e:
+                yield sse_event({"type": "error", "message": str(e)})
             
             if final_output:
                 span.set_attribute("langfuse.trace.output", final_output[:10000])

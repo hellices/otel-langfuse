@@ -20,8 +20,16 @@ from .evaluator import evaluate_answer
 def load_prompts() -> dict:
     """app/prompts.yaml에서 프롬프트 로드"""
     prompts_path = Path(__file__).parent.parent / "app" / "prompts.yaml"
-    with open(prompts_path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    try:
+        with open(prompts_path, "r", encoding="utf-8") as f:
+            try:
+                return yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                raise RuntimeError(f"Failed to parse YAML from '{prompts_path}': {e}") from e
+    except FileNotFoundError as e:
+        raise RuntimeError(f"Prompts file not found: '{prompts_path}'") from e
+    except PermissionError as e:
+        raise RuntimeError(f"Permission denied when reading prompts file: '{prompts_path}'") from e
 
 
 def create_azure_client() -> AzureOpenAI:

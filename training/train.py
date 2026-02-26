@@ -168,8 +168,12 @@ class DetailedTrainingHook(agl.Hook):
             parent_span.set_attribute("rewards.count", len(rewards))
             parent_span.set_attribute("messages.count", len(messages))
             
+            avg_reward = 0.0
+
             if rewards:
-                avg_reward = sum(r['value'] for r in rewards if r['value']) / len(rewards)
+                valid_reward_values = [r['value'] for r in rewards if r['value']]
+                if valid_reward_values:
+                    avg_reward = sum(valid_reward_values) / len(valid_reward_values)
                 parent_span.set_attribute("rewards.average", avg_reward)
                 parent_span.set_attribute("rewards.summary", json.dumps(rewards)[:2000])
                 

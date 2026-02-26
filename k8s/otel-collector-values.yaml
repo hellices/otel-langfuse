@@ -88,17 +88,17 @@ config:
     otlphttp/langfuse:
       endpoint: "http://langfuse-web.langfuse.svc.cluster.local:3000/api/public/otel"
       headers:
-        Authorization: ""
+        Authorization: "Basic <REPLACE_WITH_BASE64_ENCODED_LANGFUSE_CREDENTIALS>"
       compression: gzip
     
     # Azure Application Insights - 프로덕션 모니터링용
     azuremonitor/production:
-      connection_string: ""
+      connection_string: "InstrumentationKey=<YOUR_PRODUCTION_INSTRUMENTATION_KEY>;IngestionEndpoint=<YOUR_PRODUCTION_INGESTION_ENDPOINT>"
     
     # Azure Application Insights - RL 학습 모니터링용 (별도 App Insights)
     # TODO: 학습용 App Insights 생성 후 connection_string 교체
     azuremonitor/training:
-      connection_string: ""
+      connection_string: "InstrumentationKey=<YOUR_TRAINING_INSTRUMENTATION_KEY>;IngestionEndpoint=<YOUR_TRAINING_INGESTION_ENDPOINT>"
 
   service:
     # Telemetry 설정 - attribute 길이 제한 늘리기
