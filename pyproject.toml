@@ -20,8 +20,5 @@ dependencies = [
     "azure-identity>=1.15.0",  # DefaultAzureCredential (AKS Workload Identity)
 ]
 
-[project.scripts]
-start = "uvicorn main:app --host 0.0.0.0 --port 8000"
-
 [tool.uv]
 dev-dependencies = []
