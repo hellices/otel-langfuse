@@ -109,10 +109,6 @@ def initial_prompt_template() -> agl.PromptTemplate:
     return agl.PromptTemplate(
         template=f"""{base_prompt}
 
-문제의 난이도: {{difficulty}}
-
-답변 형식:
-- 최종 답을 "정답은 [답]입니다" 형식으로 명확히 제시하세요
-- 간결하게 답하세요""",
+문제의 난이도: {{difficulty}}""",
         engine="f-string",
     )
