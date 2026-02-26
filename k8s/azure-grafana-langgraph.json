@@ -15,7 +15,7 @@
       }
     ]
   },
-  "description": "Comprehensive monitoring dashboard for LangGraph Agent workflows, tracking LLM execution metrics, node performance, and trace visualization",
+  "description": "LLM Agent Observability Dashboard - Azure Application Insights + OpenTelemetry",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -40,7 +40,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Overview of LangGraph agent executions and LLM operations",
+      "description": "Key metrics overview",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -77,7 +77,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Total LLM Calls"
+              "options": "Total Spans"
             },
             "properties": [
               {
@@ -92,7 +92,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Avg Response Time"
+              "options": "Avg Latency (s)"
             },
             "properties": [
               {
@@ -115,7 +115,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Success Rate"
+              "options": "Success Rate (%)"
             },
             "properties": [
               {
@@ -134,32 +134,28 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Avg LLM Time"
+              "options": "Error Count"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "yellow",
+                  "fixedColor": "red",
                   "mode": "fixed"
                 }
-              },
-              {
-                "id": "unit",
-                "value": "s"
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Total Tokens"
+              "options": "Unique Users"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
-                  "fixedColor": "semi-dark-green",
+                  "fixedColor": "semi-dark-blue",
                   "mode": "fixed"
                 }
               }
@@ -168,7 +164,7 @@
         ]
       },
       "gridPos": {
-        "h": 6,
+        "h": 5,
         "w": 24,
         "x": 0,
         "y": 0
@@ -197,7 +193,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "let trace_stats = dependencies \n| where name has_any (\"langgraph\", \"langchain\", \"ChatOpenAI\", \"AzureChatOpenAI\", \"workflow\", \"chain\")\n| summarize \n    ['Total Traces'] = dcount(operation_Id),\n    ['Avg Response Time'] = round(avg(duration) / 1000, 2),\n    ['Success Rate'] = round(countif(success == \"True\") * 100.0 / count(), 1);\nlet llm_stats = dependencies\n| where name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai.chat\", \"llm\")\n| summarize\n    ['Total LLM Calls'] = count(),\n    ['Avg LLM Time'] = round(avg(duration) / 1000, 2),\n    ['Total Tokens'] = sum(coalesce(toint(customDimensions['llm.usage.total_tokens']), toint(customDimensions['gen_ai.usage.input_tokens']) + toint(customDimensions['gen_ai.usage.output_tokens']), 0));\ntrace_stats\n| extend dummy = 1\n| join kind=inner (llm_stats | extend dummy = 1) on dummy\n| project-away dummy, dummy1",
+            "query": "let stats = dependencies\n| summarize \n    ['Total Traces'] = dcount(operation_Id),\n    ['Total Spans'] = count(),\n    ['Avg Latency (s)'] = round(avg(duration) / 1000, 2),\n    ['Success Rate (%)'] = round(countif(success == \"True\") * 100.0 / count(), 1),\n    ['Error Count'] = countif(success == \"False\"),\n    ['Unique Users'] = dcount(user_Id);\nstats",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -212,7 +208,7 @@
           "refId": "A"
         }
       ],
-      "title": "LangGraph Agent Summary",
+      "title": "Overview",
       "type": "stat"
     },
     {
@@ -221,11 +217,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 6
+        "y": 5
       },
       "id": 2,
       "panels": [],
-      "title": "Agent Execution Monitoring",
+      "title": "Trends",
       "type": "row"
     },
     {
@@ -233,7 +229,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Time series showing agent execution trends over time",
+      "description": "Request volume and success/failure trends",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -243,12 +239,12 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Executions",
+            "axisLabel": "Count",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 20,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -256,7 +252,7 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
@@ -321,7 +317,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 7
+        "y": 6
       },
       "id": 3,
       "interval": "1h",
@@ -346,7 +342,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "dependencies \n| where name has_any (\"langgraph\", \"langchain\", \"ChatOpenAI\", \"AzureChatOpenAI\", \"workflow\", \"chain\")\n| summarize \n    Successful = countif(success == \"True\"),\n    Failed = countif(success == \"False\")\n    by bin(timestamp, $__interval)",
+            "query": "dependencies \n| summarize \n    Successful = countif(success == \"True\"),\n    Failed = countif(success == \"False\")\n    by bin(timestamp, $__interval)",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -361,7 +357,7 @@
           "refId": "A"
         }
       ],
-      "title": "Agent Execution Trends",
+      "title": "Request Trends",
       "type": "timeseries"
     },
     {
@@ -369,7 +365,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "LLM call trends over time with token usage",
+      "description": "Latency percentiles over time",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -379,12 +375,12 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "LLM Calls",
+            "axisLabel": "Latency (s)",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
-            "drawStyle": "bars",
-            "fillOpacity": 80,
+            "drawStyle": "line",
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -392,8 +388,8 @@
               "viz": false
             },
             "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -418,22 +414,69 @@
                 "value": 0
               }
             ]
-          }
+          },
+          "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "P99"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 7
+        "y": 6
       },
       "id": 4,
       "interval": "1h",
       "options": {
         "legend": {
           "calcs": [
-            "sum"
+            "mean"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -450,7 +493,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "dependencies\n| where name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai.chat\", \"llm\")\n| summarize \n    LLM_Calls = count(),\n    Total_Tokens = sum(coalesce(toint(customDimensions['llm.usage.total_tokens']), toint(customDimensions['gen_ai.usage.input_tokens']) + toint(customDimensions['gen_ai.usage.output_tokens']), 0))\n    by bin(timestamp, $__interval)",
+            "query": "dependencies\n| summarize \n    P50 = round(percentile(duration, 50) / 1000, 2),\n    P95 = round(percentile(duration, 95) / 1000, 2),\n    P99 = round(percentile(duration, 99) / 1000, 2)\n    by bin(timestamp, $__interval)",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -465,7 +508,7 @@
           "refId": "A"
         }
       ],
-      "title": "LLM Call Trends",
+      "title": "Latency Percentiles",
       "type": "timeseries"
     },
     {
@@ -474,11 +517,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 14
       },
       "id": 5,
       "panels": [],
-      "title": "Node Performance Analysis",
+      "title": "Operations Breakdown",
       "type": "row"
     },
     {
@@ -486,7 +529,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Performance metrics for each LangGraph node in the workflow",
+      "description": "Top operations by call count and latency",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -514,7 +557,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Avg Duration (s)"
+              "options": "Avg (s)"
             },
             "properties": [
               {
@@ -523,14 +566,30 @@
               },
               {
                 "id": "custom.width",
-                "value": 150
+                "value": 100
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Success Rate (%)"
+              "options": "P95 (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Success %"
             },
             "properties": [
               {
@@ -540,22 +599,37 @@
               {
                 "id": "decimals",
                 "value": 1
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "P95 Duration (s)"
-            },
-            "properties": [
-              {
-                "id": "unit",
-                "value": "s"
               },
               {
                 "id": "custom.width",
-                "value": 150
+                "value": 100
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": 0
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 90
+                    },
+                    {
+                      "color": "green",
+                      "value": 99
+                    }
+                  ]
+                }
               }
             ]
           },
@@ -567,19 +641,19 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 100
+                "value": 80
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Node Name"
+              "options": "Operation"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 200
+                "value": 300
               }
             ]
           }
@@ -589,12 +663,12 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 15
       },
       "id": 6,
       "options": {
         "cellHeight": "sm",
-        "enablePagination": false,
+        "enablePagination": true,
         "showHeader": true,
         "sortBy": [
           {
@@ -608,7 +682,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// traceloop 자동 계측 span 기반 LLM Task 성능\ndependencies \n| where name has_any (\"langchain.task\", \"AzureChatOpenAI\", \"ChatOpenAI\", \"openai.chat\")\n| extend task_name = case(\n    name has \"task.\", extract(\"task\\\\.(.+)\", 1, name),\n    name has \"ChatOpenAI\", \"LLM Call\",\n    name\n)\n| extend task_type = case(\n    name has \"ChatOpenAI\" or name has \"openai\", \"llm\",\n    name has \"task\", \"task\",\n    \"other\"\n)\n| summarize \n    Count = count(),\n    ['Avg Duration (s)'] = round(avg(duration) / 1000, 2),\n    ['P95 Duration (s)'] = round(percentile(duration, 95) / 1000, 2),\n    ['Success Rate (%)'] = round(countif(success == \"True\") * 100.0 / count(), 1)\n    by ['Task Name'] = task_name, ['Type'] = task_type\n| order by Count desc",
+            "query": "dependencies \n| summarize \n    Count = count(),\n    ['Avg (s)'] = round(avg(duration) / 1000, 2),\n    ['P95 (s)'] = round(percentile(duration, 95) / 1000, 2),\n    ['Success %'] = round(countif(success == \"True\") * 100.0 / count(), 1)\n    by Operation = name\n| order by Count desc\n| limit 20",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -623,7 +697,7 @@
           "refId": "A"
         }
       ],
-      "title": "LangChain Task Performance",
+      "title": "Top Operations",
       "type": "table"
     },
     {
@@ -631,7 +705,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Execution time comparison across different operations",
+      "description": "Duration distribution by operation",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -641,7 +715,7 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Duration (s)",
+            "axisLabel": "Avg Duration (s)",
             "axisPlacement": "auto",
             "fillOpacity": 80,
             "gradientMode": "none",
@@ -677,12 +751,12 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 15
       },
       "id": 7,
       "options": {
-        "barRadius": 0,
-        "barWidth": 0.97,
+        "barRadius": 0.1,
+        "barWidth": 0.8,
         "colorByField": "operation_name",
         "fullHighlight": false,
         "groupWidth": 0.7,
@@ -708,7 +782,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "dependencies \n| where not(name has \"HTTP\")\n| extend operation_name = name\n| summarize \n    avg_duration = round(avg(duration) / 1000, 2)\n    by operation_name\n| order by avg_duration desc\n| limit 15",
+            "query": "dependencies \n| summarize \n    avg_duration = round(avg(duration) / 1000, 2)\n    by operation_name = name\n| order by avg_duration desc\n| limit 10",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -723,7 +797,7 @@
           "refId": "A"
         }
       ],
-      "title": "Operation Duration Comparison",
+      "title": "Slowest Operations",
       "type": "barchart"
     },
     {
@@ -732,11 +806,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 25
       },
       "id": 8,
       "panels": [],
-      "title": "LLM Performance Analysis",
+      "title": "LLM Metrics",
       "type": "row"
     },
     {
@@ -744,7 +818,280 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Detailed LLM call metrics including token usage and latency",
+      "description": "LLM call statistics and token usage",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "LLM Calls"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Input Tokens"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Output Tokens"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg LLM Latency (s)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "id": 9,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {},
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.2.0",
+      "targets": [
+        {
+          "azureLogAnalytics": {
+            "dashboardTime": true,
+            "query": "dependencies\n| where name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai\", \"llm\", \"gen_ai\", \"chat\")\n| summarize\n    ['LLM Calls'] = count(),\n    ['Input Tokens'] = sum(toint(coalesce(customDimensions['gen_ai.usage.input_tokens'], customDimensions['llm.usage.prompt_tokens'], \"0\"))),\n    ['Output Tokens'] = sum(toint(coalesce(customDimensions['gen_ai.usage.output_tokens'], customDimensions['llm.usage.completion_tokens'], \"0\"))),\n    ['Avg LLM Latency (s)'] = round(avg(duration) / 1000, 2)",
+            "resources": [
+              "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
+            ],
+            "resultFormat": "time_series",
+            "timeColumn": "timestamp"
+          },
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${am_ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "refId": "A"
+        }
+      ],
+      "title": "LLM Summary",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${am_ds}"
+      },
+      "description": "Token usage over time",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Tokens",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Input"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Output"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "green",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "id": 10,
+      "interval": "1h",
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.0",
+      "targets": [
+        {
+          "azureLogAnalytics": {
+            "dashboardTime": true,
+            "query": "dependencies\n| where name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai\", \"llm\", \"gen_ai\", \"chat\")\n| summarize \n    Input = sum(toint(coalesce(customDimensions['gen_ai.usage.input_tokens'], customDimensions['llm.usage.prompt_tokens'], \"0\"))),\n    Output = sum(toint(coalesce(customDimensions['gen_ai.usage.output_tokens'], customDimensions['llm.usage.completion_tokens'], \"0\")))\n    by bin(timestamp, $__interval)",
+            "resources": [
+              "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
+            ],
+            "resultFormat": "time_series",
+            "timeColumn": "timestamp"
+          },
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${am_ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "refId": "A"
+        }
+      ],
+      "title": "Token Usage Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${am_ds}"
+      },
+      "description": "LLM performance by model",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -772,7 +1119,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Avg Duration (s)"
+              "options": "Avg (s)"
             },
             "properties": [
               {
@@ -784,7 +1131,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "P95 Duration (s)"
+              "options": "P95 (s)"
             },
             "properties": [
               {
@@ -797,11 +1144,11 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 27
+        "w": 12,
+        "x": 12,
+        "y": 30
       },
-      "id": 9,
+      "id": 11,
       "options": {
         "cellHeight": "sm",
         "enablePagination": true,
@@ -809,7 +1156,7 @@
         "sortBy": [
           {
             "desc": true,
-            "displayName": "Total Calls"
+            "displayName": "Calls"
           }
         ]
       },
@@ -818,7 +1165,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "dependencies\n| where name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai.chat\", \"llm\")\n| extend model = coalesce(\n    tostring(customDimensions['traceloop.association.properties.ls_model_name']),\n    tostring(customDimensions['llm.request.model']),\n    tostring(customDimensions['gen_ai.request.model']),\n    tostring(customDimensions['model']),\n    \"unknown\"\n)\n| extend provider = coalesce(\n    tostring(customDimensions['traceloop.association.properties.ls_provider']),\n    tostring(customDimensions['gen_ai.system']),\n    \"unknown\"\n)\n| summarize \n    ['Total Calls'] = count(),\n    ['Avg Duration (s)'] = round(avg(duration) / 1000, 2),\n    ['P95 Duration (s)'] = round(percentile(duration, 95) / 1000, 2),\n    ['Total Input Tokens'] = sum(coalesce(toint(customDimensions['gen_ai.usage.input_tokens']), toint(customDimensions['llm.usage.prompt_tokens']), 0)),\n    ['Total Output Tokens'] = sum(coalesce(toint(customDimensions['gen_ai.usage.output_tokens']), toint(customDimensions['llm.usage.completion_tokens']), 0)),\n    ['Total Tokens'] = sum(coalesce(toint(customDimensions['llm.usage.total_tokens']), toint(customDimensions['gen_ai.usage.input_tokens']) + toint(customDimensions['gen_ai.usage.output_tokens']), 0)),\n    ['Success Rate (%)'] = round(countif(success == \"True\") * 100.0 / count(), 1)\n    by Model = model, Provider = provider\n| order by ['Total Calls'] desc",
+            "query": "dependencies\n| where name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai\", \"llm\", \"gen_ai\", \"chat\")\n| extend model = coalesce(\n    tostring(customDimensions['gen_ai.request.model']),\n    tostring(customDimensions['llm.request.model']),\n    tostring(customDimensions['model']),\n    \"unknown\"\n)\n| summarize \n    Calls = count(),\n    ['Avg (s)'] = round(avg(duration) / 1000, 2),\n    ['P95 (s)'] = round(percentile(duration, 95) / 1000, 2),\n    ['Input Tokens'] = sum(toint(coalesce(customDimensions['gen_ai.usage.input_tokens'], customDimensions['llm.usage.prompt_tokens'], \"0\"))),\n    ['Output Tokens'] = sum(toint(coalesce(customDimensions['gen_ai.usage.output_tokens'], customDimensions['llm.usage.completion_tokens'], \"0\")))\n    by Model = model\n| order by Calls desc",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -842,11 +1189,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 38
       },
-      "id": 10,
+      "id": 12,
       "panels": [],
-      "title": "Recent Agent Sessions",
+      "title": "Recent Traces",
       "type": "row"
     },
     {
@@ -854,7 +1201,7 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Interactive table listing recent agent sessions with trace IDs for detailed analysis",
+      "description": "Recent traces with drill-down capability",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -873,7 +1220,7 @@
           "links": [
             {
               "targetBlank": false,
-              "title": "View Trace Details",
+              "title": "View Trace",
               "url": "/d/${__dashboard.uid}/langgraph-agent-monitoring?var-traceId=${__data.fields[TraceId]}"
             }
           ],
@@ -884,10 +1231,6 @@
               {
                 "color": "green",
                 "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
           }
@@ -896,23 +1239,23 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Duration (ms)"
+              "options": "Duration (s)"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "ms"
+                "value": "s"
               },
               {
                 "id": "custom.width",
-                "value": 120
+                "value": 100
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "timestamp"
+              "options": "Timestamp"
             },
             "properties": [
               {
@@ -924,7 +1267,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Success"
+              "options": "Status"
             },
             "properties": [
               {
@@ -942,11 +1285,11 @@
                 "value": [
                   {
                     "options": {
-                      "False": {
+                      "Failed": {
                         "color": "red",
                         "index": 0
                       },
-                      "True": {
+                      "Success": {
                         "color": "green",
                         "index": 1
                       }
@@ -965,14 +1308,14 @@
             "properties": [
               {
                 "id": "custom.width",
-                "value": 300
+                "value": 280
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "Operation"
+              "options": "Root Operation"
             },
             "properties": [
               {
@@ -984,12 +1327,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "LLM Calls"
+              "options": "Spans"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 100
+                "value": 60
               }
             ]
           }
@@ -999,9 +1342,9 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 39
       },
-      "id": 11,
+      "id": 13,
       "options": {
         "cellHeight": "sm",
         "enablePagination": true,
@@ -1009,7 +1352,7 @@
         "sortBy": [
           {
             "desc": true,
-            "displayName": "timestamp"
+            "displayName": "Timestamp"
           }
         ]
       },
@@ -1018,7 +1361,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// Get parent traces with their LLM call counts\nlet trace_summary = dependencies\n| summarize \n    ['LLM Calls'] = countif(name has_any (\"ChatOpenAI\", \"AzureChatOpenAI\", \"openai\", \"llm\")),\n    Operations = make_set(name),\n    TotalDuration = sum(duration),\n    HasFailure = countif(success == \"False\") > 0\n    by operation_Id\n| extend Success = iff(HasFailure, \"False\", \"True\");\n// Get the root span for each trace\ndependencies\n| summarize \n    timestamp = min(timestamp),\n    RootOperation = take_any(name),\n    Duration = max(duration)\n    by operation_Id\n| join kind=inner (trace_summary) on operation_Id\n| project \n    timestamp,\n    TraceId = operation_Id,\n    Operation = RootOperation,\n    ['Duration (ms)'] = round(Duration, 0),\n    ['LLM Calls'],\n    Success\n| order by timestamp desc\n| limit 100",
+            "query": "dependencies\n| summarize \n    Timestamp = min(timestamp),\n    ['Root Operation'] = take_any(name),\n    ['Duration (s)'] = round(max(duration) / 1000, 2),\n    Spans = count(),\n    HasError = countif(success == \"False\") > 0\n    by TraceId = operation_Id\n| extend Status = iff(HasError, \"Failed\", \"Success\")\n| project Timestamp, TraceId, ['Root Operation'], ['Duration (s)'], Spans, Status\n| order by Timestamp desc\n| limit 100",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -1029,7 +1372,7 @@
           "refId": "A"
         }
       ],
-      "title": "Recent Agent Sessions",
+      "title": "Recent Traces",
       "type": "table"
     },
     {
@@ -1038,11 +1381,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 46
+        "y": 49
       },
-      "id": 18,
+      "id": 14,
       "panels": [],
-      "title": "LangGraph Execution Flow",
+      "title": "Trace Detail",
       "type": "row"
     },
     {
@@ -1050,88 +1393,79 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Visual representation of LangGraph node execution flow for the selected trace",
+      "description": "LangGraph task-level execution flow (LLM calls, MCP calls, tool calls)",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
       "gridPos": {
-        "h": 15,
+        "h": 12,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 50
       },
-      "id": 19,
+      "id": 20,
       "options": {
-        "edges": {},
-        "nodes": {},
-        "zoomMode": "cooperative"
+        "nodes": {
+          "mainStatUnit": "ms"
+        },
+        "edges": {}
       },
-      "pluginVersion": "11.6.3",
+      "pluginVersion": "12.2.0",
       "targets": [
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "// LangGraph 주요 Task Flow\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name endswith \".task\"\r\n| where not(name has \"route\")  // 라우터 task 제외\r\n| project id = tostring(id), name, timestamp, duration\r\n| order by timestamp asc;\r\n// 노드 생성 - task 이름만 추출 (예: teacher_question.task → teacher_question)\r\nspans\r\n| extend ['title'] = replace_string(name, \".task\", \"\")\r\n| extend mainstat = strcat(round(duration/1000, 2), \"s\")\r\n| project id, ['title'], mainstat\r\n| extend _type = \"nodes\"",
+            "query": "dependencies\n| where operation_Id == \"$traceId\"\n| where name endswith \".task\"\n| order by timestamp asc\n| extend seq = row_number()\n| project id = tostring(seq), title = name, subtitle = strcat(round(duration, 0), \" ms\"), mainstat = round(duration, 0), arc__success = iff(success == \"True\", 1.0, 0.0), arc__failed = iff(success == \"False\", 1.0, 0.0)",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
-            "resultFormat": "logs",
-            "timeColumn": "timestamp"
-          },
-          "queryType": "Azure Log Analytics",
-          "refId": "Nodes"
-        },
-        {
-          "azureLogAnalytics": {
-            "dashboardTime": true,
-            "query": "// LangGraph 주요 Task Flow Edges\r\nlet traceId = \"$traceId\";\r\nlet spans = dependencies\r\n| where operation_Id == traceId\r\n| where name endswith \".task\"\r\n| where not(name has \"route\")  // 라우터 task 제외\r\n| project id = tostring(id), name, timestamp\r\n| order by timestamp asc\r\n| serialize rn = row_number();\r\n// 순차적 연결\r\nlet edges = spans\r\n| join kind=inner (spans | extend prev_rn = rn - 1) on $left.rn == $right.prev_rn\r\n| project source = id, target = id1\r\n| extend id = strcat(source, \"_to_\", target)\r\n| distinct id, source, target;\r\nedges\r\n| extend _type = \"edges\"",
-            "resources": [
-              "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
-            ],
-            "resultFormat": "logs",
+            "resultFormat": "table",
             "timeColumn": "timestamp"
           },
           "datasource": {
             "type": "grafana-azure-monitor-datasource",
             "uid": "${am_ds}"
           },
-          "hide": false,
           "queryType": "Azure Log Analytics",
-          "refId": "Edges"
+          "refId": "nodes"
+        },
+        {
+          "azureLogAnalytics": {
+            "dashboardTime": true,
+            "query": "dependencies\n| where operation_Id == \"$traceId\"\n| where name endswith \".task\"\n| order by timestamp asc\n| extend seq = row_number()\n| where seq > 1\n| project id = strcat(tostring(seq - 1), \"-\", tostring(seq)), source = tostring(seq - 1), target = tostring(seq)",
+            "resources": [
+              "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
+            ],
+            "resultFormat": "table",
+            "timeColumn": "timestamp"
+          },
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${am_ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "refId": "edges"
         }
       ],
-      "title": "Execution Flow Graph",
+      "title": "Task Execution Flow",
       "type": "nodeGraph"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 62
-      },
-      "id": 14,
-      "panels": [],
-      "title": "Distributed Trace View",
-      "type": "row"
     },
     {
       "datasource": {
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Distributed tracing view showing detailed execution timeline for the selected agent session",
+      "description": "Distributed trace view for selected trace",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
       },
       "gridPos": {
-        "h": 25,
+        "h": 20,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 62
       },
       "id": 15,
       "options": {
@@ -1167,7 +1501,7 @@
           "refId": "A"
         }
       ],
-      "title": "Agent Execution Trace",
+      "title": "Trace Waterfall",
       "type": "traces"
     },
     {
@@ -1176,11 +1510,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 88
+        "y": 82
       },
       "id": 16,
       "panels": [],
-      "title": "Error Analysis",
+      "title": "Errors",
       "type": "row"
     },
     {
@@ -1188,7 +1522,191 @@
         "type": "grafana-azure-monitor-datasource",
         "uid": "${am_ds}"
       },
-      "description": "Recent errors and exceptions in agent execution",
+      "description": "Error trends over time",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "red",
+            "mode": "fixed"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Error Count",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      },
+      "id": 17,
+      "interval": "1h",
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.0",
+      "targets": [
+        {
+          "azureLogAnalytics": {
+            "dashboardTime": true,
+            "query": "exceptions\n| summarize Errors = count() by bin(timestamp, $__interval)",
+            "resources": [
+              "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
+            ],
+            "resultFormat": "time_series",
+            "timeColumn": "timestamp"
+          },
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${am_ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "refId": "A"
+        }
+      ],
+      "title": "Error Trends",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${am_ds}"
+      },
+      "description": "Error breakdown by type",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 83
+      },
+      "id": 18,
+      "options": {
+        "displayLabels": [
+          "name",
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "values": [
+            "value"
+          ]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.0",
+      "targets": [
+        {
+          "azureLogAnalytics": {
+            "dashboardTime": true,
+            "query": "exceptions\n| summarize Count = count() by Type = type\n| order by Count desc\n| limit 10",
+            "resources": [
+              "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
+            ],
+            "resultFormat": "table",
+            "timeColumn": "timestamp"
+          },
+          "datasource": {
+            "type": "grafana-azure-monitor-datasource",
+            "uid": "${am_ds}"
+          },
+          "queryType": "Azure Log Analytics",
+          "refId": "A"
+        }
+      ],
+      "title": "Errors by Type",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-azure-monitor-datasource",
+        "uid": "${am_ds}"
+      },
+      "description": "Recent exceptions with details",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1206,7 +1724,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "red",
                 "value": 0
               }
             ]
@@ -1216,7 +1734,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "timestamp"
+              "options": "Timestamp"
             },
             "properties": [
               {
@@ -1228,7 +1746,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Error Type"
+              "options": "Type"
             },
             "properties": [
               {
@@ -1236,16 +1754,28 @@
                 "value": 200
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TraceId"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
           }
         ]
       },
       "gridPos": {
-        "h": 10,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 89
       },
-      "id": 17,
+      "id": 19,
       "options": {
         "cellHeight": "sm",
         "enablePagination": true,
@@ -1253,7 +1783,7 @@
         "sortBy": [
           {
             "desc": true,
-            "displayName": "timestamp"
+            "displayName": "Timestamp"
           }
         ]
       },
@@ -1262,7 +1792,7 @@
         {
           "azureLogAnalytics": {
             "dashboardTime": true,
-            "query": "exceptions\n| summarize \n    timestamp = min(timestamp),\n    ['Error Type'] = take_any(type),\n    ['Error Message'] = take_any(outerMessage),\n    ['Error Count'] = count()\n    by TraceId = operation_Id\n| order by timestamp desc\n| limit 50",
+            "query": "exceptions\n| project \n    Timestamp = timestamp,\n    TraceId = operation_Id,\n    Type = type,\n    Message = outerMessage\n| order by Timestamp desc\n| limit 50",
             "resources": [
               "/subscriptions/$sub/resourceGroups/$rg/providers/microsoft.insights/components/$res"
             ],
@@ -1277,19 +1807,19 @@
           "refId": "A"
         }
       ],
-      "title": "Recent Errors",
+      "title": "Recent Exceptions",
       "type": "table"
     }
   ],
   "preload": false,
-  "refresh": "30m",
+  "refresh": "5m",
   "schemaVersion": 42,
   "tags": [
-    "langgraph",
-    "agent",
     "llm",
-    "monitoring",
-    "opentelemetry"
+    "agent",
+    "opentelemetry",
+    "azure",
+    "langfuse"
   ],
   "templating": {
     "list": [
@@ -1313,7 +1843,7 @@
           "uid": "${am_ds}"
         },
         "definition": "",
-        "description": "Subscription of the Application Insights",
+        "description": "Azure Subscription",
         "includeAll": false,
         "label": "Subscription",
         "name": "sub",
@@ -1391,7 +1921,7 @@
           "uid": "${am_ds}"
         },
         "definition": "",
-        "description": "Trace ID for detailed agent execution analysis",
+        "description": "Select a trace to view details",
         "hide": 2,
         "label": "Trace ID",
         "name": "traceId",
@@ -1415,12 +1945,12 @@
     ]
   },
   "time": {
-    "from": "now-7d",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
-  "title": "LangGraph Agent Monitoring",
+  "title": "LLM Agent Observability",
   "uid": "langgraph-agent-monitoring",
   "version": 1
 }
