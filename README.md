@@ -58,6 +58,30 @@ provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=OTEL_EN
 LangchainInstrumentor().instrument()  # LangChain 자동 계측
 ```
 
+### OpenTelemetry 메트릭
+
+`MeterProvider` + `OTLPMetricExporter`로 메트릭을 OTel Collector에 gRPC(4317)로 전송합니다.
+자동 계측 라이브러리를 통해 수동 instrument 없이 메트릭을 수집합니다:
+
+```python
+meter_provider = MeterProvider(resource=resource, metric_readers=[
+    PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=OTEL_ENDPOINT), export_interval_millis=15000)
+])
+metrics.set_meter_provider(meter_provider)
+
+FastAPIInstrumentor.instrument_app(app, meter_provider=meter_provider)
+OpenAIInstrumentor().instrument()
+SystemMetricsInstrumentor().instrument()
+URLLib3Instrumentor().instrument()
+```
+
+| 계측 라이브러리 | 수집 메트릭 | 설명 |
+|---------------|-----------|------|
+| `instrumentation-fastapi` | `http.server.request.duration`, `http.server.active_requests` | HTTP 요청 지연시간 및 동시 요청 수 |
+| `instrumentation-openai` | `gen_ai.client.token.usage`, `gen_ai.client.operation.duration` | LLM 토큰 사용량 및 호출 지연시간 |
+| `instrumentation-system-metrics` | `system.cpu.utilization`, `system.memory.usage`, `runtime.cpython.gc_count` 등 | 프로세스 리소스 모니터링 |
+| `instrumentation-urllib3` | `http.client.request.duration` | 외부 HTTP 호출 지연시간 (Azure OpenAI API 등) |
+
 ### OTel Collector 라우팅
 
 트레이스를 두 곳으로 동시 전송:

@@ -22,6 +22,8 @@ from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+from opentelemetry.instrumentation.system_metrics import SystemMetricsInstrumentor
+from opentelemetry.instrumentation.urllib3 import URLLib3Instrumentor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
@@ -155,6 +157,10 @@ def setup_opentelemetry():
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
     
+    # Auto-instrumentation (metrics)
+    SystemMetricsInstrumentor().instrument()
+    URLLib3Instrumentor().instrument()
+    
     print(f"✅ OpenTelemetry (traces + metrics) → {OTEL_EXPORTER_OTLP_ENDPOINT}")
     return tracer
 
@@ -165,7 +171,7 @@ async def lifespan(app: FastAPI):
     global graph, tracer
     tracer = setup_opentelemetry()
     graph = create_graph()
-    FastAPIInstrumentor.instrument_app(app)
+    FastAPIInstrumentor.instrument_app(app, meter_provider=metrics.get_meter_provider())
     print(f"✅ LangGraph initialized: {AZURE_OPENAI_DEPLOYMENT_NAME}")
     yield
     print("Shutting down...")
