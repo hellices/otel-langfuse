@@ -14,12 +14,17 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from opentelemetry import trace
+from opentelemetry import trace, metrics
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 from opentelemetry.instrumentation.langchain import LangchainInstrumentor
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.openai import OpenAIInstrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 
 from langchain_core.messages import HumanMessage
 
@@ -130,15 +135,27 @@ def setup_opentelemetry():
     global tracer
     os.environ.setdefault("OTEL_ATTRIBUTE_VALUE_LENGTH_LIMIT", "65535")
     
-    provider = TracerProvider(resource=Resource.create({SERVICE_NAME: "teacher-student-quiz"}))
-    provider.add_span_processor(BatchSpanProcessor(
+    resource = Resource.create({SERVICE_NAME: "teacher-student-quiz"})
+    
+    # Traces
+    trace_provider = TracerProvider(resource=resource)
+    trace_provider.add_span_processor(BatchSpanProcessor(
         OTLPSpanExporter(endpoint=OTEL_EXPORTER_OTLP_ENDPOINT, insecure=True)
     ))
-    trace.set_tracer_provider(provider)
+    trace.set_tracer_provider(trace_provider)
     LangchainInstrumentor().instrument()
+    OpenAIInstrumentor().instrument()
     tracer = trace.get_tracer(__name__)
     
-    print(f"✅ OpenTelemetry → {OTEL_EXPORTER_OTLP_ENDPOINT}")
+    # Metrics
+    metric_reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint=OTEL_EXPORTER_OTLP_ENDPOINT, insecure=True),
+        export_interval_millis=15000,
+    )
+    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+    metrics.set_meter_provider(meter_provider)
+    
+    print(f"✅ OpenTelemetry (traces + metrics) → {OTEL_EXPORTER_OTLP_ENDPOINT}")
     return tracer
 
 
@@ -148,13 +165,18 @@ async def lifespan(app: FastAPI):
     global graph, tracer
     tracer = setup_opentelemetry()
     graph = create_graph()
+    FastAPIInstrumentor.instrument_app(app)
     print(f"✅ LangGraph initialized: {AZURE_OPENAI_DEPLOYMENT_NAME}")
     yield
     print("Shutting down...")
-    provider = trace.get_tracer_provider()
-    if hasattr(provider, 'force_flush'):
-        provider.force_flush()
-        provider.shutdown()
+    trace_provider = trace.get_tracer_provider()
+    if hasattr(trace_provider, 'force_flush'):
+        trace_provider.force_flush()
+        trace_provider.shutdown()
+    meter_provider = metrics.get_meter_provider()
+    if hasattr(meter_provider, 'force_flush'):
+        meter_provider.force_flush()
+        meter_provider.shutdown()
 
 
 # === FastAPI App ===

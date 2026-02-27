@@ -126,6 +126,12 @@ config:
         receivers: [routing/traces]
         processors: []
         exporters: [otlphttp/langfuse, azuremonitor/training]
+      
+      # 메트릭 파이프라인: 앱에서 전송하는 OTel metrics → Azure Monitor
+      metrics:
+        receivers: [otlp]
+        processors: [memory_limiter, batch]
+        exporters: [azuremonitor/production, debug]
 
 # 환경 변수로 attribute 길이 제한 설정 (중요!)
 extraEnvs:
