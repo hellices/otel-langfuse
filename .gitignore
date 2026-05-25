@@ -3,6 +3,7 @@
 .env.local
 langfuse-values.yaml
 k8s/langfuse-values.yaml
+k8s/*-deploy.yaml
 
 # Python
 __pycache__/

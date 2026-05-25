@@ -52,18 +52,18 @@ config:
     # 라우팅 커넥터: service.name 기반 분기
     # Note: routing connector는 resource context에서만 동작 (span attributes 접근 불가)
     routing/traces:
-      default_pipelines: [traces/production]
+      default_pipelines: [traces/prod_langfuse, traces/prod_azmon]
       error_mode: ignore
       table:
         # Agent Lightning 전용 서비스명 패턴
         - condition: IsMatch(resource.attributes["service.name"], ".*agentlightning.*")
-          pipelines: [traces/training]
+          pipelines: [traces/train_langfuse, traces/train_azmon]
         # service.name에 "training" 포함 시 학습 파이프라인으로
         - condition: IsMatch(resource.attributes["service.name"], ".*training.*")
-          pipelines: [traces/training]
+          pipelines: [traces/train_langfuse, traces/train_azmon]
         # telemetry.sdk.name이 agentlightning인 경우
         - condition: resource.attributes["telemetry.sdk.name"] == "agentlightning"
-          pipelines: [traces/training]
+          pipelines: [traces/train_langfuse, traces/train_azmon]
 
   processors:
     batch:
@@ -78,6 +78,14 @@ config:
       trace_statements:
         - context: span
           statements: []
+    # Azure Monitor attribute 길이 제한 (8192자) 대응
+    # LLM 출력 등 긴 attribute가 있으면 Azure Monitor exporter가 span을 drop함
+    # Langfuse에는 원본 전송, Azure Monitor에는 truncate 후 전송
+    transform/truncate_for_azmon:
+      trace_statements:
+        - context: span
+          statements:
+            - truncate_all(attributes, 8192)
 
   exporters:
     # debug exporter - basic: span 수만 표시, normal: 요약, detailed: 전체 내용
@@ -115,17 +123,25 @@ config:
         processors: [memory_limiter, batch]
         exporters: [routing/traces]
       
-      # 프로덕션 파이프라인: 웹 서비스 트래픽
-      traces/production:
+      # Langfuse 파이프라인: 원본 데이터 (truncate 없음)
+      traces/prod_langfuse:
         receivers: [routing/traces]
         processors: []
-        exporters: [otlphttp/langfuse, azuremonitor/production]
+        exporters: [otlphttp/langfuse]
+      traces/train_langfuse:
+        receivers: [routing/traces]
+        processors: []
+        exporters: [otlphttp/langfuse]
       
-      # 학습 파이프라인: RL 학습 트래픽
-      traces/training:
+      # Azure Monitor 파이프라인: attribute 8192자 truncate
+      traces/prod_azmon:
         receivers: [routing/traces]
-        processors: []
-        exporters: [otlphttp/langfuse, azuremonitor/training]
+        processors: [transform/truncate_for_azmon]
+        exporters: [azuremonitor/production]
+      traces/train_azmon:
+        receivers: [routing/traces]
+        processors: [transform/truncate_for_azmon]
+        exporters: [azuremonitor/training]
       
       # 메트릭 파이프라인: 앱에서 전송하는 OTel metrics → Azure Monitor
       metrics:
